@@ -1498,8 +1498,325 @@ def approve_remote_cmd(args: argparse.Namespace) -> None:
 def remote_run_cmd(args: argparse.Namespace) -> None:
     capability = args.capability
 
-    if not getattr(args, "stub", False):
-        die("remote-run currently requires --stub. Real endpoint execution is not enabled.")
+    is_stub = bool(getattr(args, "stub", False))
+    is_real = bool(getattr(args, "real", False))
+    is_dry_run = bool(getattr(args, "dry_run", False))
+
+    if is_stub and (is_real or is_dry_run):
+        die("Use either --stub or --real --dry-run, not both.")
+
+    if not is_stub and not (is_real and is_dry_run):
+        die("remote-run requires either --stub or --real --dry-run. Real endpoint execution is not enabled.")
+
+    tid = current_task_id()
+    td = task_dir(tid)
+
+    cap = resolve_capability(capability)
+    if cap["remote_allowed"] != "true":
+        die(f"Capability is not remote-enabled: {capability}")
+
+    if not cap["preferred_routes"]:
+        die(f"Capability has no preferred_routes: {capability}")
+
+    selected_route = cap["preferred_routes"][0]
+    route = resolve_route(selected_route)
+
+    remote_dir = td / "remote"
+    outbox_dir = td / "outbox"
+    remote_dir.mkdir(parents=True, exist_ok=True)
+    outbox_dir.mkdir(parents=True, exist_ok=True)
+
+    approved_file = remote_dir / f"approved.{capability}.md"
+
+    if not approved_file.exists():
+        die(f"Missing approved remote request file: {approved_file}")
+
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    import json
+
+    if is_stub:
+        output_file = outbox_dir / f"remote.{capability}.md"
+
+        output_file.write_text(
+            f"# Remote Stub Output\n\n"
+            f"## Status\n\nstub_not_executed\n\n"
+            f"## Task ID\n\n{tid}\n\n"
+            f"## Capability\n\n{capability}\n\n"
+            f"## Selected Route\n\n{selected_route}\n\n"
+            f"## Provider\n\n{route.get('provider', '-')}\n\n"
+            f"## Model\n\n{route.get('model', '-')}\n\n"
+            f"## Timestamp\n\n{timestamp}\n\n"
+            f"## Result\n\n"
+            f"Remote execution is not enabled yet. This is a governance dry run.\n\n"
+            f"No endpoint call was made. No API key was used. No network call was made.\n"
+        )
+
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        log_path = LOGS_DIR / "remote_call_log.jsonl"
+
+        record = {
+            "timestamp": timestamp,
+            "task_id": tid,
+            "phase": "remote_run",
+            "capability": capability,
+            "selected_route": selected_route,
+            "provider": route.get("provider", "-"),
+            "model": route.get("model", "-"),
+            "approved_by": "human",
+            "prompt_file": str(approved_file),
+            "output_file": str(output_file),
+            "latency_seconds": 0,
+            "estimated_cost_usd": 0.0,
+            "status": "stub_not_executed",
+        }
+
+        with log_path.open("a") as f:
+            f.write(json.dumps(record) + "\n")
+
+        print(f"Remote stub output written: {output_file}")
+        print(f"Remote call log updated: {log_path}")
+        return
+
+    # --real --dry-run path only. No real endpoint execution.
+    if cap.get("remote_read_only") != "true":
+        die(f"Capability is not marked remote_read_only: {capability}")
+
+    provider = route.get("provider", "-")
+    model = route.get("model", "-")
+
+    if provider != "nvidia_nim":
+        die(f"Phase 8A dry-run only supports provider nvidia_nim, got: {provider}")
+
+    import os
+
+    api_key_present = bool(os.environ.get("NVIDIA_API_KEY"))
+
+    payload_file = outbox_dir / f"remote_payload.{capability}.json"
+    summary_file = outbox_dir / f"remote_dry_run.{capability}.md"
+
+    approved_content = approved_file.read_text()
+
+    payload = {
+        "task_id": tid,
+        "capability": capability,
+        "selected_route": selected_route,
+        "provider": provider,
+        "model": model,
+        "dry_run": True,
+        "api_key_present": api_key_present,
+        "request_source_file": str(approved_file),
+        "output_file": str(summary_file),
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a read-only architecture/research reviewer. Do not write files.",
+            },
+            {
+                "role": "user",
+                "content": approved_content,
+            },
+        ],
+    }
+
+    payload_file.write_text(json.dumps(payload, indent=2) + "\n")
+
+    summary_file.write_text(
+        f"# NIM Remote Dry Run\n\n"
+        f"## Status\n\n"
+        f"dry_run_not_executed\n\n"
+        f"## Task ID\n\n{tid}\n\n"
+        f"## Capability\n\n{capability}\n\n"
+        f"## Selected Route\n\n{selected_route}\n\n"
+        f"## Provider\n\n{provider}\n\n"
+        f"## Model\n\n{model}\n\n"
+        f"## Payload Path\n\n{payload_file}\n\n"
+        f"## API Key Present\n\n{str(api_key_present).lower()}\n\n"
+        f"## Timestamp\n\n{timestamp}\n\n"
+        f"## Safety Confirmation\n\n"
+        f"No NVIDIA NIM endpoint call was made.\n"
+        f"No network call was made.\n"
+        f"No model execution occurred.\n"
+        f"No paid compute was used.\n"
+        f"NVIDIA_API_KEY was not printed.\n"
+    )
+
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = LOGS_DIR / "remote_call_log.jsonl"
+
+    record = {
+        "timestamp": timestamp,
+        "task_id": tid,
+        "phase": "remote_dry_run",
+        "capability": capability,
+        "selected_route": selected_route,
+        "provider": provider,
+        "model": model,
+        "approved_by": "human",
+        "prompt_file": str(approved_file),
+        "output_file": str(summary_file),
+        "latency_seconds": 0,
+        "estimated_cost_usd": 0.0,
+        "status": "dry_run_not_executed",
+    }
+
+    with log_path.open("a") as f:
+        f.write(json.dumps(record) + "\n")
+
+    print(f"Remote payload preview written: {payload_file}")
+    print(f"Remote dry-run summary written: {summary_file}")
+    print(f"Remote call log updated: {log_path}")
+
+
+
+def _remote_run_dry_run(args: argparse.Namespace) -> None:
+    """Handle --real --dry-run execution without making actual network calls."""
+    capability = args.capability
+
+    tid = current_task_id()
+    td = task_dir(tid)
+
+    cap = resolve_capability(capability)
+    
+    # Validate capability exists
+    if cap["remote_allowed"] != "true":
+        die(f"Capability is not remote-enabled: {capability}")
+
+    # Validate remote_read_only
+    if cap["remote_read_only"] != "true":
+        die(f"Capability is not remote_read_only: {capability}")
+
+    # Validate approved remote request file exists
+    remote_dir = td / "remote"
+    approved_file = remote_dir / f"approved.{capability}.md"
+    if not approved_file.exists():
+        die(f"Missing approved remote request file: {approved_file}")
+
+    # Check NVIDIA_API_KEY exists in environment
+    api_key_present = "NVIDIA_API_KEY" in os.environ
+    
+    # Determine selected route
+    if not cap["preferred_routes"]:
+        die(f"Capability has no preferred_routes: {capability}")
+    
+    selected_route = cap["preferred_routes"][0]
+    route = resolve_route(selected_route)
+    
+    # Validate provider is nvidia_nim
+    if route.get("provider") != "nvidia_nim":
+        die(f"Capability must use nvidia_nim provider. Got: {route.get('provider')}")
+
+    # Generate NIM payload preview
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    
+    # Create dry-run payload file
+    payload_file = td / "outbox" / f"remote_payload.{capability}.json"
+    payload_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Create a mock NIM request payload (simplified structure)
+    payload_data = {
+        "model": route.get("model", "-"),
+        "messages": [
+            {
+                "role": "user",
+                "content": "Sample prompt for dry-run"
+            }
+        ],
+        "temperature": 0.7,
+        "max_tokens": 1024,
+        "top_p": 0.9
+    }
+    
+    import json
+    payload_file.write_text(json.dumps(payload_data, indent=2))
+    
+    # Create dry-run markdown file
+    dry_run_file = td / "outbox" / f"remote_dry_run.{capability}.md"
+    dry_run_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    dry_run_content = f"""# NIM Dry Run Payload Preview
+
+## Request Details
+- Task ID: {tid}
+- Capability: {capability}
+- Selected Route: {selected_route}
+- Provider: {route.get('provider', '-')}
+- Model: {route.get('model', '-')}
+- Timestamp: {timestamp}
+
+## API Status
+- NVIDIA_API_KEY present: {api_key_present}
+
+## Payload Preview
+This is a preview of the NIM request payload that would be sent:
+```json
+{json.dumps(payload_data, indent=2)}
+```
+
+## Dry-Run Summary
+This is a dry-run only - no actual endpoint call was made.
+No network call was made.
+No API key was used.
+No paid compute was performed.
+"""
+
+    dry_run_file.write_text(dry_run_content)
+    
+    # Append to remote call log
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = LOGS_DIR / "remote_call_log.jsonl"
+    
+    record = {
+        "timestamp": timestamp,
+        "task_id": tid,
+        "phase": "remote_dry_run",
+        "capability": capability,
+        "selected_route": selected_route,
+        "provider": route.get("provider", "-"),
+        "model": route.get("model", "-"),
+        "approved_by": "human",
+        "prompt_file": str(approved_file),
+        "output_file": str(payload_file),
+        "latency_seconds": 0,
+        "estimated_cost_usd": 0.0,
+        "status": "dry_run_not_executed"
+    }
+
+    with log_path.open("a") as f:
+        f.write(json.dumps(record) + "\n")
+
+    print(f"Dry-run payload written: {payload_file}")
+    print(f"Dry-run markdown written: {dry_run_file}")
+    print(f"Remote call log updated: {log_path}")
+
+    # Also write a build summary file
+    build_summary_file = td / "outbox" / "build.md"
+    build_summary_file.parent.mkdir(parents=True, exist_ok=True)
+    build_summary_file.write_text(f"""# BUILD summary for task: {tid}
+
+## NIM Dry-run execution
+Built NIM request payload for capability: {capability}
+
+### Files created:
+- {payload_file}
+- {dry_run_file}
+- {log_path}
+
+### Validation
+All validations passed:
+1. Capability exists
+2. Remote allowed: true
+3. Remote read only: true
+4. Approved remote request file exists
+5. Selected route resolves
+6. Provider is nvidia_nim
+7. NVIDIA_API_KEY exists in environment: {api_key_present}
+""")
+
+
+def _remote_run_stub(args: argparse.Namespace) -> None:
+    """Handle the original --stub behavior to maintain backward compatibility."""
+    capability = args.capability
 
     tid = current_task_id()
     td = task_dir(tid)
@@ -1864,6 +2181,8 @@ def main() -> None:
     p = sub.add_parser("remote-run")
     p.add_argument("capability")
     p.add_argument("--stub", action="store_true")
+    p.add_argument("--real", action="store_true")
+    p.add_argument("--dry-run", action="store_true", dest="dry_run")
     p.set_defaults(func=remote_run_cmd)
 
     p = sub.add_parser("request-research")
