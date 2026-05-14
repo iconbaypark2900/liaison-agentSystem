@@ -1454,6 +1454,159 @@ def remote_run_cmd(args: argparse.Namespace) -> None:
     print(f"Remote stub output written: {output_file}")
     print(f"Remote call log updated: {log_path}")
 
+
+
+def load_research_worker_blocks() -> dict[str, str]:
+    path = CONFIG_DIR / "research_workers.yaml"
+    if not path.exists():
+        die(f"Missing research worker config: {path}")
+    return extract_yaml_blocks(path.read_text(), "research_workers")
+
+
+def resolve_research_worker(worker_name: str) -> dict:
+    blocks = load_research_worker_blocks()
+    if worker_name not in blocks:
+        available = ", ".join(blocks.keys())
+        die(f"Unknown research worker: {worker_name}. Available: {available}")
+
+    block = blocks[worker_name]
+    return {
+        "name": worker_name,
+        "provider": block_field(block, "provider") or "-",
+        "tool": block_field(block, "tool") or "-",
+        "status": block_field(block, "status") or "-",
+        "requires_human_approval": block_field(block, "requires_human_approval") or "true",
+        "sandbox_only": block_field(block, "sandbox_only") or "true",
+        "publishes_artifacts": block_field(block, "publishes_artifacts") or "-",
+        "use_for": block_list_values(block, "use_for"),
+        "writes_to": block_list_values(block, "writes_to"),
+        "forbidden": block_list_values(block, "forbidden"),
+    }
+
+
+def request_research_cmd(args: argparse.Namespace) -> None:
+    worker_name = args.worker_name
+    request_text = args.request_text
+
+    tid = current_task_id()
+    td = task_dir(tid)
+
+    worker = resolve_research_worker(worker_name)
+
+    research_dir = td / "research"
+    research_dir.mkdir(parents=True, exist_ok=True)
+
+    request_file = research_dir / f"request.{worker_name}.md"
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    request_file.write_text(
+        f"# Research Worker Request\n\n"
+        f"## Status\n\npending_approval\n\n"
+        f"## Task ID\n\n{tid}\n\n"
+        f"## Worker Name\n\n{worker_name}\n\n"
+        f"## Provider\n\n{worker.get('provider', '-')}\n\n"
+        f"## Tool\n\n{worker.get('tool', '-')}\n\n"
+        f"## Worker Status\n\n{worker.get('status', '-')}\n\n"
+        f"## Sandbox Only\n\n{worker.get('sandbox_only', '-')}\n\n"
+        f"## Requires Human Approval\n\n{worker.get('requires_human_approval', '-')}\n\n"
+        f"## Timestamp\n\n{timestamp}\n\n"
+        f"## Request Text\n\n{request_text}\n"
+    )
+
+    print(f"Research request created: {request_file}")
+
+
+def approve_research_cmd(args: argparse.Namespace) -> None:
+    worker_name = args.worker_name
+
+    tid = current_task_id()
+    td = task_dir(tid)
+
+    research_dir = td / "research"
+    request_file = research_dir / f"request.{worker_name}.md"
+    approved_file = research_dir / f"approved.{worker_name}.md"
+
+    if not request_file.exists():
+        die(f"Missing research request file: {request_file}")
+
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    approved_file.write_text(
+        f"# Approved Research Worker Request\n\n"
+        f"## Status\n\napproved\n\n"
+        f"## Approved By\n\nhuman\n\n"
+        f"## Timestamp\n\n{timestamp}\n\n"
+        f"## Source Request\n\n{request_file}\n\n"
+        f"## Approved Content\n\n"
+        f"{request_file.read_text()}\n"
+    )
+
+    print(f"Research request approved: {approved_file}")
+
+
+def research_run_cmd(args: argparse.Namespace) -> None:
+    worker_name = args.worker_name
+
+    if not getattr(args, "stub", False):
+        die("research-run currently requires --stub. Real ML-Intern execution is not enabled.")
+
+    tid = current_task_id()
+    td = task_dir(tid)
+
+    worker = resolve_research_worker(worker_name)
+
+    research_dir = td / "research"
+    outbox_dir = td / "outbox"
+    research_dir.mkdir(parents=True, exist_ok=True)
+    outbox_dir.mkdir(parents=True, exist_ok=True)
+
+    approved_file = research_dir / f"approved.{worker_name}.md"
+    output_file = outbox_dir / f"research.{worker_name}.md"
+
+    if not approved_file.exists():
+        die(f"Missing approved research request file: {approved_file}")
+
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    output_file.write_text(
+        f"# Research Worker Stub Output\n\n"
+        f"## Status\n\nstub_not_executed\n\n"
+        f"## Task ID\n\n{tid}\n\n"
+        f"## Worker Name\n\n{worker_name}\n\n"
+        f"## Provider\n\n{worker.get('provider', '-')}\n\n"
+        f"## Tool\n\n{worker.get('tool', '-')}\n\n"
+        f"## Timestamp\n\n{timestamp}\n\n"
+        f"## Result\n\n"
+        f"Research worker execution is not enabled yet. This is a governance dry run.\n\n"
+        f"No ML-Intern process was run. No Hugging Face call was made. No paid compute was used. No data was uploaded.\n"
+    )
+
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = LOGS_DIR / "ml_intern_runs.jsonl"
+
+    import json
+    record = {
+        "timestamp": timestamp,
+        "task_id": tid,
+        "phase": "research_run",
+        "worker_name": worker_name,
+        "provider": worker.get("provider", "-"),
+        "tool": worker.get("tool", "-"),
+        "approved_by": "human",
+        "prompt_file": str(approved_file),
+        "output_file": str(output_file),
+        "latency_seconds": 0,
+        "estimated_cost_usd": 0.0,
+        "status": "stub_not_executed",
+    }
+
+    with log_path.open("a") as f:
+        f.write(json.dumps(record) + "\n")
+
+    print(f"Research stub output written: {output_file}")
+    print(f"Research call log updated: {log_path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Human-in-the-loop DGX Spark agent workflow conductor")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -1538,6 +1691,20 @@ def main() -> None:
     p.add_argument("capability")
     p.add_argument("--stub", action="store_true")
     p.set_defaults(func=remote_run_cmd)
+
+    p = sub.add_parser("request-research")
+    p.add_argument("worker_name")
+    p.add_argument("request_text")
+    p.set_defaults(func=request_research_cmd)
+
+    p = sub.add_parser("approve-research")
+    p.add_argument("worker_name")
+    p.set_defaults(func=approve_research_cmd)
+
+    p = sub.add_parser("research-run")
+    p.add_argument("worker_name")
+    p.add_argument("--stub", action="store_true")
+    p.set_defaults(func=research_run_cmd)
 
     args = parser.parse_args()
     args.func(args)
