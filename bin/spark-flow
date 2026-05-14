@@ -1,0 +1,939 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from textwrap import dedent
+from datetime import datetime
+
+FLOW_DIR = Path(".spark-flow")
+TASKS_DIR = FLOW_DIR / "tasks"
+CURRENT_FILE = FLOW_DIR / "current"
+
+MODELS = {
+    "stable": "qwen3.6:latest",
+    "coder": "qwen3-coder:30b",
+    "patch": "gpt-oss:20b",
+    "review": "nemotron-3-nano:30b-a3b-q4_K_M",
+    "legacy": "qwen2.5-coder:32b",
+}
+
+PHASES = ["plan", "build", "patch", "review", "close"]
+
+ROUTES = {
+    "plan": {
+        "agent": "claude",
+        "model": MODELS["review"],
+        "role": "Architecture planning and task decomposition. Do not edit project source files by default.",
+        "next": "build",
+    },
+    "build": {
+        "agent": "opencode",
+        "model": MODELS["coder"],
+        "role": "Implementation engineer. Make the smallest useful patch, add tests, and validate.",
+        "next": "review",
+    },
+    "patch": {
+        "agent": "codex",
+        "model": MODELS["patch"],
+        "role": "Surgical patcher. Fix only the listed failure or approved review issue.",
+        "next": "review",
+    },
+    "review": {
+        "agent": "claude",
+        "model": MODELS["review"],
+        "role": "Strict reviewer. Do not edit files. Approve, reject, or request a minimal patch.",
+        "next": "close",
+    },
+    "close": {
+        "agent": "opencode",
+        "model": MODELS["stable"],
+        "role": "Closeout engineer. Update docs/tasks/decisions and produce final summary.",
+        "next": None,
+    },
+}
+
+
+def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, check=check)
+
+
+def capture(cmd: list[str]) -> str:
+    return subprocess.check_output(cmd, text=True).strip()
+
+
+def die(message: str) -> None:
+    print(f"ERROR: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def now() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def ensure_dirs() -> None:
+    TASKS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def current_task_id() -> str:
+    if not CURRENT_FILE.exists():
+        die('No current task. Run: spark-flow init <task-id> "description"')
+    return CURRENT_FILE.read_text().strip()
+
+
+def task_dir(task_id: str | None = None) -> Path:
+    tid = task_id or current_task_id()
+    return TASKS_DIR / tid
+
+
+def state_path(task_id: str | None = None) -> Path:
+    return task_dir(task_id) / "STATE.txt"
+
+
+def read_state(task_id: str | None = None) -> dict[str, str]:
+    path = state_path(task_id)
+    if not path.exists():
+        die(f"Missing state file: {path}")
+    state: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            state[key] = value
+    return state
+
+
+def write_state(state: dict[str, str], task_id: str | None = None) -> None:
+    path = state_path(task_id)
+    text = "\n".join(f"{k}={v}" for k, v in state.items()) + "\n"
+    path.write_text(text)
+
+
+def require_cmd(name: str) -> None:
+    if shutil.which(name) is None:
+        die(f"Missing command: {name}")
+
+
+def ollama_alive() -> bool:
+    result = subprocess.run(
+        ["curl", "-fsS", "http://127.0.0.1:11434/api/tags"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def stop_models() -> None:
+    print("Stopping loaded Ollama models for predictable memory...")
+    for model in MODELS.values():
+        subprocess.run(
+            ["ollama", "stop", model],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    subprocess.run(["ollama", "ps"], check=False)
+
+
+def git_status() -> str:
+    try:
+        return capture(["git", "status", "--short"])
+    except Exception:
+        return ""
+
+
+def write_task_files(task_id: str, description: str) -> None:
+    td = task_dir(task_id)
+    for sub in ["prompts", "outbox", "approved", "feedback", "handoff", "logs"]:
+        (td / sub).mkdir(parents=True, exist_ok=True)
+
+    (td / "TASK.md").write_text(dedent(f"""\
+        # Task: {task_id}
+
+        ## Description
+
+        {description}
+
+        ## Human-in-the-loop rule
+
+        Each agent writes its phase result to:
+
+        `.spark-flow/tasks/{task_id}/outbox/<phase>.md`
+
+        The human reviews it and runs:
+
+        `spark-flow approve <phase>`
+
+        or:
+
+        `spark-flow reject <phase> "reason"`
+        """))
+
+    (td / "handoff" / "plan.md").write_text(dedent(f"""\
+        # PLAN input
+
+        ## Task
+
+        {description}
+
+        ## Goal
+
+        Create a precise, scoped implementation handoff for the BUILD phase.
+
+        ## Human requirement
+
+        The PLAN output must be reviewed by the human before BUILD starts.
+        """))
+
+    (td / "CHECKS.md").write_text(dedent("""\
+        # CHECKS.md
+
+        ## Human checkpoints
+
+        - [ ] PLAN approved by human
+        - [ ] BUILD approved by human
+        - [ ] PATCH approved by human if used
+        - [ ] REVIEW approved by human
+        - [ ] CLOSE approved by human
+
+        ## Global checks
+
+        - [ ] Scope stayed small
+        - [ ] No unrelated files changed
+        - [ ] No unapproved dependencies added
+        - [ ] Validation commands provided
+        - [ ] Human reviewed before handoff
+        """))
+
+
+def init(args: argparse.Namespace) -> None:
+    ensure_dirs()
+    td = task_dir(args.task_id)
+    if td.exists():
+        die(f"Task already exists: {args.task_id}")
+
+    CURRENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CURRENT_FILE.write_text(args.task_id)
+
+    td.mkdir(parents=True)
+    state = {
+        "TASK_ID": args.task_id,
+        "DESCRIPTION": args.description,
+        "CURRENT_PHASE": "plan",
+        "CREATED_AT": now(),
+        "UPDATED_AT": now(),
+        "APPROVED_PLAN": "0",
+        "APPROVED_BUILD": "0",
+        "APPROVED_PATCH": "0",
+        "APPROVED_REVIEW": "0",
+        "APPROVED_CLOSE": "0",
+    }
+    write_state(state, args.task_id)
+    write_task_files(args.task_id, args.description)
+
+    print(f"Initialized task: {args.task_id}")
+    print(f"Task dir: {td}")
+    print("Next: spark-flow start plan")
+
+
+def phase_prompt(phase: str) -> str:
+    if phase not in ROUTES:
+        die(f"Unknown phase: {phase}")
+
+    tid = current_task_id()
+    td = task_dir(tid)
+    state = read_state(tid)
+    route = ROUTES[phase]
+
+    previous_context = ""
+    approved_files = sorted((td / "approved").glob("*.md"))
+    if approved_files:
+        previous_context = "\n".join(f"- {p}" for p in approved_files)
+    else:
+        previous_context = "- No approved prior phase outputs yet."
+
+    feedback_file = td / "feedback" / f"{phase}.md"
+    feedback = feedback_file.read_text() if feedback_file.exists() else "No human rejection feedback for this phase."
+
+    outbox_file = td / "outbox" / f"{phase}.md"
+
+    phase_specific = {
+        "plan": dedent("""\
+            ## Phase objective: PLAN
+
+            Do not edit project source files.
+
+            Produce a scoped handoff for BUILD.
+
+            Required output sections:
+            1. Current repo state
+            2. Smallest useful vertical slice
+            3. Allowed files
+            4. Forbidden files/directories
+            5. Acceptance criteria
+            6. Test plan
+            7. Risks
+            8. Exact BUILD prompt for Qwen3-Coder
+
+            Do not add unrequested tools like flake8, coverage thresholds, or commit requirements.
+            """),
+        "build": dedent("""\
+            ## Phase objective: BUILD
+
+            Implement the approved handoff only.
+
+            Rules:
+            1. Inspect files first.
+            2. Touch only allowed files from the approved PLAN handoff.
+            3. Add or update tests.
+            4. Do not install dependencies.
+            5. Do not add unapproved tools.
+            6. Show validation commands.
+            """),
+        "patch": dedent("""\
+            ## Phase objective: PATCH
+
+            Apply a minimal corrective patch.
+
+            Use only for:
+            - failing tests
+            - human rejection feedback
+            - review-requested changes
+
+            Do not redesign.
+            """),
+        "review": dedent("""\
+            ## Phase objective: REVIEW
+
+            Do not edit files.
+
+            Review against:
+            - PROJECT_SPEC.md
+            - AGENTS.md
+            - approved PLAN
+            - approved BUILD notes
+            - current git diff
+
+            Output:
+            1. Verdict: approve / approve with changes / reject
+            2. Top issues
+            3. Missing tests
+            4. Minimal PATCH prompt if needed
+            """),
+        "close": dedent("""\
+            ## Phase objective: CLOSE
+
+            Finish the task thread.
+
+            Actions:
+            1. Summarize final state
+            2. Update docs only if needed
+            3. List validation commands/results
+            4. Produce ready-to-commit message
+
+            Do not start a new feature.
+            """),
+    }[phase]
+
+    return dedent(f"""\
+        # spark-flow prompt: {phase}
+
+        ## Task
+
+        {state["DESCRIPTION"]}
+
+        ## Agent
+
+        {route["agent"]}
+
+        ## Model
+
+        {route["model"]}
+
+        ## Role
+
+        {route["role"]}
+
+        ## Required reading
+
+        1. AGENTS.md, if present
+        2. CLAUDE.md, if present
+        3. PROMPTS.md, if present
+        4. {td}/TASK.md
+        5. {td}/CHECKS.md
+        6. Approved prior outputs listed below
+
+        ## Approved prior phase outputs
+
+        {previous_context}
+
+        ## Human feedback for this phase
+
+        {feedback}
+
+        {phase_specific}
+
+        ## Mandatory output file
+
+        Write your final phase result to:
+
+        {outbox_file}
+
+        The human will review this file before the next model receives it.
+
+        ## Global rules
+
+        - Keep the work scoped to this task.
+        - Do not delete unrelated files.
+        - Do not install dependencies unless explicitly approved.
+        - Do not call external services unless explicitly required.
+        - Show changed files and validation commands.
+        - If the output is a plan or review, do not edit source files.
+        """)
+
+
+def write_prompt(phase: str) -> Path:
+    tid = current_task_id()
+    td = task_dir(tid)
+    prompt_file = td / "prompts" / f"{phase}.md"
+    prompt_file.write_text(phase_prompt(phase))
+    return prompt_file
+
+
+def start(args: argparse.Namespace) -> None:
+    phase = args.phase
+    if phase not in ROUTES:
+        die(f"Unknown phase: {phase}")
+
+    require_cmd("ollama")
+    require_cmd("curl")
+    require_cmd(ROUTES[phase]["agent"])
+
+    if not ollama_alive():
+        die("Ollama API is not reachable at http://127.0.0.1:11434")
+
+    tid = current_task_id()
+    state = read_state(tid)
+    state["CURRENT_PHASE"] = phase
+    state["UPDATED_AT"] = now()
+    write_state(state, tid)
+
+    prompt_file = write_prompt(phase)
+    route = ROUTES[phase]
+
+    stop_models()
+
+    print()
+    print(f"Starting phase: {phase}")
+    print(f"Agent: {route['agent']}")
+    print(f"Model: {route['model']}")
+    print(f"Prompt file: {prompt_file}")
+    print()
+    print("Inside the agent, paste:")
+    print(f"Read the prompt file at: {Path.cwd() / prompt_file}")
+    print()
+    print("The agent must write its result to:")
+    print(Path.cwd() / task_dir(tid) / "outbox" / f"{phase}.md")
+    print()
+
+    run(["ollama", "launch", route["agent"], "--model", route["model"]])
+
+
+def approve(args: argparse.Namespace) -> None:
+    phase = args.phase
+    if phase not in ROUTES:
+        die(f"Unknown phase: {phase}")
+
+    tid = current_task_id()
+    td = task_dir(tid)
+    outbox = td / "outbox" / f"{phase}.md"
+    if not outbox.exists():
+        die(f"Missing agent output: {outbox}")
+
+    approved = td / "approved" / f"{phase}.md"
+    shutil.copyfile(outbox, approved)
+
+    next_phase = ROUTES[phase]["next"]
+    if next_phase:
+        handoff = td / "handoff" / f"{next_phase}.md"
+        handoff.write_text(dedent(f"""\
+            # HANDOFF for {next_phase}
+
+            This handoff was human-approved from phase: {phase}
+
+            Approved source:
+
+            {approved}
+
+            ## Approved content
+
+            {approved.read_text()}
+            """))
+
+    state = read_state(tid)
+    state[f"APPROVED_{phase.upper()}"] = "1"
+    state["CURRENT_PHASE"] = next_phase or "complete"
+    state["UPDATED_AT"] = now()
+    write_state(state, tid)
+
+    print(f"Approved phase: {phase}")
+    if next_phase:
+        print(f"Next: spark-flow start {next_phase}")
+    else:
+        print("Workflow complete. Review git diff and commit manually.")
+
+
+def reject(args: argparse.Namespace) -> None:
+    phase = args.phase
+    if phase not in ROUTES:
+        die(f"Unknown phase: {phase}")
+
+    tid = current_task_id()
+    td = task_dir(tid)
+    feedback = td / "feedback" / f"{phase}.md"
+    feedback.write_text(dedent(f"""\
+        # Human rejection feedback for {phase}
+
+        {args.reason}
+
+        ## Next action
+
+        Re-run:
+
+        spark-flow start {phase}
+        """))
+
+    state = read_state(tid)
+    state[f"APPROVED_{phase.upper()}"] = "0"
+    state["CURRENT_PHASE"] = phase
+    state["UPDATED_AT"] = now()
+    write_state(state, tid)
+
+    print(f"Rejected phase: {phase}")
+    print(f"Feedback written to: {feedback}")
+    print(f"Next: spark-flow start {phase}")
+
+
+def status(_: argparse.Namespace) -> None:
+    tid = current_task_id()
+    state = read_state(tid)
+    td = task_dir(tid)
+
+    print(f"Task: {state.get('TASK_ID')}")
+    print(f"Description: {state.get('DESCRIPTION')}")
+    print(f"Current phase: {state.get('CURRENT_PHASE')}")
+    print(f"Task dir: {td}")
+    print()
+    print("Approvals:")
+    for phase in PHASES:
+        print(f"  {phase}: {state.get('APPROVED_' + phase.upper(), '0')}")
+    print()
+    print("Git status:")
+    print(git_status() or "  clean")
+    print()
+    print("Ollama loaded models:")
+    subprocess.run(["ollama", "ps"], check=False)
+
+
+def doctor(_: argparse.Namespace) -> None:
+    print("Commands:")
+    for cmd in ["ollama", "curl", "git", "claude", "opencode", "codex"]:
+        found = shutil.which(cmd)
+        print(f"  {cmd}: {found or 'MISSING'}")
+
+    print()
+    print("Ollama API:")
+    print("  OK" if ollama_alive() else "  FAIL")
+
+    print()
+    print("Installed models:")
+    subprocess.run(["ollama", "list"], check=False)
+
+    print()
+    print("Loaded models:")
+    subprocess.run(["ollama", "ps"], check=False)
+
+
+def stop(_: argparse.Namespace) -> None:
+    stop_models()
+
+
+# ---------------------------------------------------------------------
+# Phase 6 control-plane commands
+# ---------------------------------------------------------------------
+
+AGENT_SYSTEM_DIR = Path.home() / "spark/agent-system"
+CONFIG_DIR = AGENT_SYSTEM_DIR / "config"
+WORKFLOWS_DIR = AGENT_SYSTEM_DIR / "workflows"
+CHECKS_DIR = AGENT_SYSTEM_DIR / "checks"
+LOGS_DIR = AGENT_SYSTEM_DIR / "logs"
+
+
+def read_text_if_exists(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text()
+
+
+def list_yaml_files(directory: Path) -> list[Path]:
+    if not directory.exists():
+        return []
+    return sorted(list(directory.glob("*.yaml")) + list(directory.glob("*.yml")))
+
+
+def extract_yaml_blocks(text: str, parent_key: str) -> dict[str, str]:
+    """Small YAML-block extractor for our simple control-plane config files.
+
+    This is not a full YAML parser. It is intentionally dependency-free and
+    handles the simple layout used in ~/spark/agent-system/config/model_routes.yaml.
+    """
+    lines = text.splitlines()
+    blocks: dict[str, list[str]] = {}
+    in_parent = False
+    current_key: str | None = None
+
+    for line in lines:
+        stripped = line.strip()
+
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        if line.startswith(parent_key + ":"):
+            in_parent = True
+            current_key = None
+            continue
+
+        if in_parent:
+            if line and not line.startswith(" ") and stripped.endswith(":"):
+                break
+
+            if line.startswith("  ") and not line.startswith("    ") and stripped.endswith(":"):
+                current_key = stripped[:-1]
+                blocks[current_key] = []
+                continue
+
+            if current_key:
+                blocks[current_key].append(line)
+
+    return {key: "\n".join(value) for key, value in blocks.items()}
+
+
+def block_field(block: str, field: str) -> str:
+    for line in block.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(field + ":"):
+            return stripped.split(":", 1)[1].strip()
+    return ""
+
+
+def block_list_values(block: str, field: str) -> list[str]:
+    values: list[str] = []
+    lines = block.splitlines()
+    in_field = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped.startswith(field + ":"):
+            in_field = True
+            continue
+
+        if in_field:
+            if stripped.startswith("- "):
+                values.append(stripped[2:].strip().strip('"').strip("'"))
+                continue
+
+            if stripped and not stripped.startswith("- ") and not line.startswith("      "):
+                break
+
+    return values
+
+
+def load_routes_text() -> str:
+    path = CONFIG_DIR / "model_routes.yaml"
+    if not path.exists():
+        die(f"Missing routing config: {path}")
+    return path.read_text()
+
+
+def routes_cmd(_: argparse.Namespace) -> None:
+    text = load_routes_text()
+
+    print(f"Routing config: {CONFIG_DIR / 'model_routes.yaml'}")
+    print()
+
+    for section in ["local_models", "remote_models", "quantum_models"]:
+        blocks = extract_yaml_blocks(text, section)
+        print(section + ":")
+        if not blocks:
+            print("  none")
+            continue
+
+        for name, block in blocks.items():
+            provider = block_field(block, "provider") or "unknown"
+            model = block_field(block, "model") or "unknown"
+            agent = block_field(block, "agent") or "-"
+            approval = block_field(block, "requires_human_approval") or "-"
+            edits = block_field(block, "edits_files") or "-"
+            tags = block_list_values(block, "trigger_tags")
+
+            print(f"  - {name}")
+            print(f"      provider: {provider}")
+            print(f"      model: {model}")
+            print(f"      agent: {agent}")
+            print(f"      requires_human_approval: {approval}")
+            print(f"      edits_files: {edits}")
+            if tags:
+                print(f"      trigger_tags: {', '.join(tags)}")
+        print()
+
+
+def score_route(query: str, name: str, block: str, section: str) -> int:
+    q = query.lower()
+    score = 0
+
+    if section == "local_models":
+        use_for = block_list_values(block, "use_for")
+        for item in use_for:
+            if item.replace("_", " ") in q or item in q:
+                score += 2
+
+        if any(x in q for x in ["build", "implement", "code", "test", "bugfix"]):
+            if name == "coder":
+                score += 5
+        if any(x in q for x in ["patch", "failure", "fix"]):
+            if name == "patch":
+                score += 5
+        if any(x in q for x in ["review", "plan", "architecture", "risk"]):
+            if name == "reviewer":
+                score += 5
+        if any(x in q for x in ["close", "docs", "summary"]):
+            if name == "stable":
+                score += 5
+
+    else:
+        tags = block_list_values(block, "trigger_tags")
+        use_for = block_list_values(block, "use_for")
+
+        for tag in tags:
+            if tag.lower() in q:
+                score += 10
+
+        for item in use_for:
+            if item.replace("_", " ") in q or item in q:
+                score += 3
+
+        if section == "quantum_models" and any(x in q for x in ["quantum", "ising", "calibration", "qec"]):
+            score += 5
+
+    return score
+
+
+def route_cmd(args: argparse.Namespace) -> None:
+    query = args.query
+    text = load_routes_text()
+
+    candidates: list[tuple[int, str, str, str]] = []
+    for section in ["local_models", "remote_models", "quantum_models"]:
+        blocks = extract_yaml_blocks(text, section)
+        for name, block in blocks.items():
+            candidates.append((score_route(query, name, block, section), section, name, block))
+
+    candidates = sorted(candidates, key=lambda x: x[0], reverse=True)
+    best = candidates[0] if candidates else None
+
+    if not best or best[0] <= 0:
+        print("Recommended route: local reviewer")
+        print("Reason: no strong tag match; local-first default.")
+        return
+
+    score, section, name, block = best
+    provider = block_field(block, "provider") or "unknown"
+    model = block_field(block, "model") or "unknown"
+    agent = block_field(block, "agent") or "-"
+    approval = block_field(block, "requires_human_approval") or "false"
+    edits = block_field(block, "edits_files") or ("true" if section == "local_models" else "false")
+    tags = block_list_values(block, "trigger_tags")
+
+    print(f"Recommended route: {name}")
+    print(f"Section: {section}")
+    print(f"Provider: {provider}")
+    print(f"Model: {model}")
+    print(f"Agent: {agent}")
+    print(f"Requires human approval: {approval}")
+    print(f"Edits files: {edits}")
+    print(f"Score: {score}")
+    if tags:
+        print(f"Matched/available tags: {', '.join(tags)}")
+
+
+def workflows_cmd(_: argparse.Namespace) -> None:
+    files = list_yaml_files(WORKFLOWS_DIR)
+
+    print(f"Workflow directory: {WORKFLOWS_DIR}")
+    print()
+
+    if not files:
+        print("No workflow YAML files found.")
+        return
+
+    for path in files:
+        text = path.read_text()
+        name = ""
+        description = ""
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("name:"):
+                name = stripped.split(":", 1)[1].strip()
+            elif stripped.startswith("description:"):
+                description = stripped.split(":", 1)[1].strip()
+        print(f"- {name or path.stem}: {description}")
+        print(f"  file: {path}")
+
+
+def validate_cmd(args: argparse.Namespace) -> None:
+    profile = args.profile
+    script = CHECKS_DIR / f"{profile}.sh"
+
+    if not script.exists():
+        die(f"Missing validation script for profile '{profile}': {script}")
+
+    print(f"Running validation profile: {profile}")
+    print(f"Script: {script}")
+    print()
+
+    result = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+    output = result.stdout or ""
+    print(output)
+
+    try:
+        tid = current_task_id()
+        td = task_dir(tid)
+        outbox = td / "outbox"
+        outbox.mkdir(parents=True, exist_ok=True)
+        summary = outbox / f"test.{profile}.md"
+        status = "pass" if result.returncode == 0 else "fail"
+        summary.write_text(
+            f"# TEST summary\\n\\n"
+            f"## Profile\\n\\n{profile}\\n\\n"
+            f"## Status\\n\\n{status}\\n\\n"
+            f"## Command\\n\\n`bash {script}`\\n\\n"
+            f"## Output\\n\\n```text\\n{output}\\n```\\n"
+        )
+        print(f"Validation summary written to: {summary}")
+    except Exception:
+        pass
+
+    raise SystemExit(result.returncode)
+
+
+def budget_cmd(_: argparse.Namespace) -> None:
+    limits_path = CONFIG_DIR / "budget_limits.yaml"
+    log_path = LOGS_DIR / "remote_call_log.jsonl"
+
+    print(f"Budget config: {limits_path}")
+    if limits_path.exists():
+        print()
+        print(limits_path.read_text())
+    else:
+        print("Missing budget config.")
+
+    today = datetime.now().date().isoformat()
+    month = today[:7]
+    today_total = 0.0
+    month_total = 0.0
+    calls_today = 0
+    calls_month = 0
+
+    if log_path.exists():
+        import json
+
+        for line in log_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except Exception:
+                continue
+
+            ts = str(item.get("timestamp", ""))
+            cost = float(item.get("estimated_cost_usd", 0) or 0)
+
+            if ts.startswith(today):
+                today_total += cost
+                calls_today += 1
+            if ts.startswith(month):
+                month_total += cost
+                calls_month += 1
+
+    print("Remote usage:")
+    print(f"  today calls: {calls_today}")
+    print(f"  today estimated cost: ${today_total:.4f}")
+    print(f"  month calls: {calls_month}")
+    print(f"  month estimated cost: ${month_total:.4f}")
+    print(f"  log file: {log_path}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Human-in-the-loop DGX Spark agent workflow conductor")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("init")
+    p.add_argument("task_id")
+    p.add_argument("description")
+    p.set_defaults(func=init)
+
+    p = sub.add_parser("start")
+    p.add_argument("phase", choices=PHASES)
+    p.set_defaults(func=start)
+
+    p = sub.add_parser("approve")
+    p.add_argument("phase", choices=PHASES)
+    p.set_defaults(func=approve)
+
+    p = sub.add_parser("reject")
+    p.add_argument("phase", choices=PHASES)
+    p.add_argument("reason")
+    p.set_defaults(func=reject)
+
+    p = sub.add_parser("status")
+    p.set_defaults(func=status)
+
+    p = sub.add_parser("doctor")
+    p.set_defaults(func=doctor)
+
+    p = sub.add_parser("stop")
+    p.set_defaults(func=stop)
+
+    p = sub.add_parser("routes")
+    p.set_defaults(func=routes_cmd)
+
+    p = sub.add_parser("route")
+    p.add_argument("query")
+    p.set_defaults(func=route_cmd)
+
+    p = sub.add_parser("workflows")
+    p.set_defaults(func=workflows_cmd)
+
+    p = sub.add_parser("validate")
+    p.add_argument("--profile", required=True)
+    p.set_defaults(func=validate_cmd)
+
+    p = sub.add_parser("budget")
+    p.set_defaults(func=budget_cmd)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

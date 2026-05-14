@@ -1,0 +1,19 @@
+version: 1
+
+providers:
+  ollama:
+    kind: local
+    base_url: http://127.0.0.1:11434
+    health_command: ollama ps
+    notes: Local DGX Spark model serving.
+
+  nvidia_nim:
+    kind: remote
+    base_url: https://integrate.api.nvidia.com/v1
+    env_key: NVIDIA_API_KEY
+    chat_completions_path: /chat/completions
+    models_path: /models
+    health_path: /health/ready
+    requires_human_approval: true
+    edits_files: false
+    notes: Hosted NVIDIA/NIM endpoint lane.

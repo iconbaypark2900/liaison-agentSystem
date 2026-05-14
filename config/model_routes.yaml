@@ -1,0 +1,93 @@
+version: 1
+
+defaults:
+  local_first: true
+  require_human_approval_for_remote: true
+  remote_outputs_are_read_only: true
+  local_outputs_require_approval: true
+
+local_models:
+  stable:
+    provider: ollama
+    model: qwen3.6:latest
+    agent: opencode
+    use_for:
+      - closeout
+      - documentation
+      - stable_small_edits
+      - summaries
+
+  coder:
+    provider: ollama
+    model: qwen3-coder:30b
+    agent: opencode
+    use_for:
+      - implementation
+      - tests
+      - bugfixes
+      - small_refactors
+
+  patch:
+    provider: ollama
+    model: gpt-oss:20b
+    agent: codex
+    use_for:
+      - minimal_patches
+      - test_failures
+      - targeted_fixes
+
+  reviewer:
+    provider: ollama
+    model: nemotron-3-nano:30b-a3b-q4_K_M
+    agent: claude
+    use_for:
+      - planning
+      - review
+      - risk_review
+      - architecture_check
+
+remote_models:
+  deepseek_v4_flash:
+    provider: nvidia_nim
+    model: deepseek-ai/deepseek-v4-flash
+    use_for:
+      - long_context_coding
+      - repo_wide_analysis
+      - hard_debugging
+      - agent_planning
+    trigger_tags:
+      - "#deepseek"
+      - "#long_context"
+      - "#repo_wide"
+      - "#hard_debug"
+    requires_human_approval: true
+    edits_files: false
+
+  qwen3_coder_480b:
+    provider: nvidia_nim
+    model: qwen/qwen3-coder-480b-a35b-instruct
+    use_for:
+      - large_coding_plan
+      - multi_file_refactor_plan
+      - test_strategy
+    trigger_tags:
+      - "#big_refactor"
+      - "#coding_plan"
+    requires_human_approval: true
+    edits_files: false
+
+quantum_models:
+  ising_calibration:
+    provider: nvidia_nim
+    model: nvidia/ising-calibration-1-35b-a3b
+    use_for:
+      - quantum_calibration_plot_analysis
+      - qpu_status_interpretation
+      - structured_calibration_report
+    trigger_tags:
+      - "#ising"
+      - "#calibration"
+      - "#qec_plots"
+      - "#quantum_chart_analysis"
+    requires_human_approval: true
+    edits_files: false

@@ -1,0 +1,14 @@
+# Runtime logs and temporary files
+*.tmp
+*.bak
+*.backup
+__pycache__/
+.pytest_cache/
+
+# Local secrets
+.env
+*.env
+*.local.json
+
+# Generated logs may be committed selectively if useful
+logs/*.tmp

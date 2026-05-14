@@ -1,0 +1,45 @@
+name: quantum-ising
+description: Analyze and validate quantum calibration or decoding workflows.
+
+phases:
+  - name: quantum_plan
+    route: reviewer
+    skills:
+      - spark-flow-planning
+      - cudaq-quantum-workflow
+      - nvidia-ising-review
+    approval: required
+
+  - name: ising_analysis
+    route: ising_calibration
+    kind: remote_read_only
+    skills:
+      - nvidia-ising-review
+    approval: required
+    remote_approval: required
+
+  - name: build
+    route: coder
+    skills:
+      - spark-flow-build
+      - scientific-validation
+    approval: required
+
+  - name: quantum_validate
+    kind: deterministic
+    validate_profile: quantum
+    approval: required
+
+  - name: review
+    route: reviewer
+    skills:
+      - spark-flow-review
+      - nvidia-ising-review
+      - scientific-validation
+    approval: required
+
+  - name: close
+    route: stable
+    skills:
+      - spark-flow-closeout
+    approval: required

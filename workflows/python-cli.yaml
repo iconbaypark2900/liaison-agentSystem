@@ -1,0 +1,40 @@
+name: python-cli
+description: Build and validate a Python CLI project.
+
+phases:
+  - name: plan
+    route: reviewer
+    skills:
+      - spark-flow-planning
+    approval: required
+
+  - name: build
+    route: coder
+    skills:
+      - spark-flow-build
+      - testing-hardening
+    approval: required
+
+  - name: test
+    kind: deterministic
+    validate_profile: python
+    approval: required
+
+  - name: patch
+    route: patch
+    optional: true
+    skills:
+      - testing-hardening
+    approval: required
+
+  - name: review
+    route: reviewer
+    skills:
+      - spark-flow-review
+    approval: required
+
+  - name: close
+    route: stable
+    skills:
+      - spark-flow-closeout
+    approval: required

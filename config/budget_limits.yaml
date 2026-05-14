@@ -1,0 +1,21 @@
+version: 1
+
+defaults:
+  daily_remote_budget_usd: 2.00
+  monthly_remote_budget_usd: 60.00
+  require_tag_for_remote: true
+  require_human_approval: true
+  log_remote_calls: true
+
+log_fields:
+  - timestamp
+  - task_id
+  - phase
+  - provider
+  - model
+  - approved_by
+  - trigger_tags
+  - prompt_file
+  - output_file
+  - latency_seconds
+  - estimated_cost_usd
