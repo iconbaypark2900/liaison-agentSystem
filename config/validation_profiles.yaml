@@ -1,0 +1,61 @@
+version: 1
+
+profiles:
+  python:
+    script: checks/python.sh
+    required_files:
+      - pyproject.toml
+      - tests
+
+  backend:
+    script: checks/backend.sh
+    required_files:
+      - openapi.yaml
+      - tests
+
+  frontend:
+    script: checks/frontend.sh
+    required_files:
+      - package.json
+      - tests
+
+  ai-app:
+    script: checks/ai-app.sh
+    required_files:
+      - package.json
+      - tests
+
+  rag:
+    script: checks/rag.sh
+    required_files:
+      - rag/retrieval_eval.yaml
+      - rag/eval_dataset.jsonl
+      - rag/golden_answers.jsonl
+
+  ml-research:
+    script: checks/ml-research.sh
+    required_files:
+      - ml_research/experiment.yaml
+      - ml_research/metrics.yaml
+      - ml_research/results_schema.json
+      - ml_research/experiment_log.jsonl
+
+  sampling:
+    script: checks/sampling.sh
+    required_files:
+      - ml_research/sampling_plan.yaml
+      - ml_research/sampling_results.jsonl
+
+  quantum:
+    script: checks/quantum.sh
+    required_files:
+      - quantum/quantum_config.yaml
+      - quantum/backend_registry.yaml
+      - quantum/benchmark_plan.yaml
+      - quantum/results_schema.json
+      - quantum/experiment_log.jsonl
+
+  security:
+    script: checks/security.sh
+    required_files:
+      - SECURITY.md

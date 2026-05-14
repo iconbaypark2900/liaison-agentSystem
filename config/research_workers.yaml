@@ -1,0 +1,27 @@
+version: 1
+
+research_workers:
+  ml_intern:
+    provider: huggingface
+    tool: ml-intern
+    status: planned
+    use_for:
+      - dataset_discovery
+      - dataset_inspection
+      - repetitive_sampling
+      - training_iteration
+      - evaluation_loop
+      - model_card_generation
+      - dataset_card_generation
+      - hf_hub_preparation
+    requires_human_approval: true
+    sandbox_only: true
+    publishes_artifacts: approval_required
+    writes_to:
+      - ml_research/outbox
+      - .spark-flow/tasks/<task-id>/outbox
+    forbidden:
+      - publish_without_approval
+      - use_paid_compute_without_approval
+      - upload_private_data
+      - edit_production_files_directly

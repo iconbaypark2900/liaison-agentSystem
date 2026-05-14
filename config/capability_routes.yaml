@@ -1,0 +1,94 @@
+version: 1
+
+capabilities:
+  local_implementation:
+    description: Implement local code, tests, configs, and small refactors.
+    preferred_routes:
+      - coder
+    fallback_routes:
+      - stable
+    remote_allowed: false
+    remote_read_only: false
+    requires_human_approval: true
+
+  local_review:
+    description: Review architecture, risks, diffs, and implementation quality locally.
+    preferred_routes:
+      - reviewer
+    fallback_routes:
+      - stable
+    remote_allowed: false
+    remote_read_only: false
+    requires_human_approval: true
+
+  long_context_architecture:
+    description: Use a hosted endpoint for long-context architecture or repo-wide reasoning.
+    preferred_routes:
+      - deepseek_v4_flash
+      - qwen3_coder_480b
+    fallback_routes:
+      - reviewer
+    remote_allowed: true
+    remote_read_only: true
+    requires_human_approval: true
+    trigger_tags:
+      - "#long_context"
+      - "#repo_wide"
+      - "#architecture"
+      - "#hard_debug"
+
+  large_coding_strategy:
+    description: Use a hosted endpoint for multi-file refactor strategy or coding plans.
+    preferred_routes:
+      - qwen3_coder_480b
+      - deepseek_v4_flash
+    fallback_routes:
+      - coder
+      - reviewer
+    remote_allowed: true
+    remote_read_only: true
+    requires_human_approval: true
+    trigger_tags:
+      - "#big_refactor"
+      - "#coding_plan"
+      - "#test_strategy"
+
+  research_synthesis:
+    description: Use a hosted endpoint for paper/research synthesis and high-level technical reports.
+    preferred_routes:
+      - deepseek_v4_flash
+    fallback_routes:
+      - reviewer
+    remote_allowed: true
+    remote_read_only: true
+    requires_human_approval: true
+    trigger_tags:
+      - "#research_synthesis"
+      - "#papers"
+      - "#literature"
+
+  quantum_calibration_analysis:
+    description: Use NVIDIA Ising-style analysis for QPU calibration charts/reports.
+    preferred_routes:
+      - ising_calibration
+    fallback_routes:
+      - reviewer
+    remote_allowed: true
+    remote_read_only: true
+    requires_human_approval: true
+    trigger_tags:
+      - "#ising"
+      - "#calibration"
+      - "#qec_plots"
+      - "#quantum_chart_analysis"
+
+  repetitive_sampling:
+    description: Use ML-Intern or local code to run repeated scientific, ML, RAG, or QML sampling jobs.
+    preferred_routes:
+      - ml_intern
+      - coder
+    fallback_routes:
+      - reviewer
+    remote_allowed: false
+    remote_read_only: false
+    requires_human_approval: true

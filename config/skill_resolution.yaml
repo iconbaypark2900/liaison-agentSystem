@@ -1,0 +1,87 @@
+version: 1
+
+workflows:
+  python-cli:
+    plan:
+      - spark-flow-planning
+    build:
+      - spark-flow-build
+      - testing-hardening
+      - dependency-discipline
+    test:
+      - testing-hardening
+    patch:
+      - testing-hardening
+    review:
+      - spark-flow-review
+      - security-review
+    close:
+      - spark-flow-closeout
+
+  ai-app:
+    plan:
+      - spark-flow-planning
+      - vercel-ai-sdk
+    build:
+      - spark-flow-build
+      - vercel-ai-sdk
+      - ai-app-testing
+    test:
+      - ai-app-testing
+    review:
+      - spark-flow-review
+      - security-review
+      - ai-app-testing
+    close:
+      - spark-flow-closeout
+
+  rag-system:
+    plan:
+      - spark-flow-planning
+      - retrieval-design
+    build:
+      - spark-flow-build
+      - rag-eval
+    validate:
+      - rag-eval
+      - citation-faithfulness
+    review:
+      - spark-flow-review
+      - provenance-review
+    close:
+      - spark-flow-closeout
+
+  ml-research:
+    plan:
+      - spark-flow-planning
+      - scientific-validation
+    research:
+      - ml-intern-research
+      - dataset-inspection
+      - hf-experiment-runner
+    validate:
+      - scientific-validation
+      - sampling-plan-review
+    review:
+      - spark-flow-review
+      - scientific-validation
+    close:
+      - spark-flow-closeout
+      - model-card-generation
+
+  quantum-ising:
+    quantum_plan:
+      - spark-flow-planning
+      - cudaq-quantum-workflow
+      - nvidia-ising-review
+    ising_analysis:
+      - nvidia-ising-review
+      - quantum-validation-review
+    quantum_validate:
+      - scientific-validation
+      - quantum-validation-review
+    review:
+      - spark-flow-review
+      - nvidia-ising-review
+    close:
+      - spark-flow-closeout
