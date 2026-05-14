@@ -1234,6 +1234,226 @@ def budget_cmd(_: argparse.Namespace) -> None:
     print(f"  log file: {log_path}")
 
 
+
+# ---------------------------------------------------------------------
+# Phase 4 capability-based remote request skeleton
+# ---------------------------------------------------------------------
+
+def load_capability_blocks() -> dict[str, str]:
+    path = CONFIG_DIR / "capability_routes.yaml"
+    if not path.exists():
+        die(f"Missing capability config: {path}")
+    return extract_yaml_blocks(path.read_text(), "capabilities")
+
+
+def resolve_capability(capability: str) -> dict:
+    blocks = load_capability_blocks()
+    if capability not in blocks:
+        available = ", ".join(blocks.keys())
+        die(f"Unknown capability: {capability}. Available: {available}")
+
+    block = blocks[capability]
+    return {
+        "name": capability,
+        "description": block_field(block, "description") or "-",
+        "preferred_routes": block_list_values(block, "preferred_routes"),
+        "fallback_routes": block_list_values(block, "fallback_routes"),
+        "trigger_tags": block_list_values(block, "trigger_tags"),
+        "remote_allowed": (block_field(block, "remote_allowed") or "false").lower(),
+        "remote_read_only": (block_field(block, "remote_read_only") or "false").lower(),
+        "requires_human_approval": (block_field(block, "requires_human_approval") or "true").lower(),
+    }
+
+
+def resolve_route(route_name: str) -> dict:
+    route_text = load_routes_text()
+
+    for section in ["local_models", "remote_models", "quantum_models"]:
+        route_blocks = extract_yaml_blocks(route_text, section)
+        if route_name in route_blocks:
+            block = route_blocks[route_name]
+            return {
+                "name": route_name,
+                "section": section,
+                "provider": block_field(block, "provider") or "-",
+                "model": block_field(block, "model") or "-",
+                "agent": block_field(block, "agent") or "-",
+                "trigger_tags": block_list_values(block, "trigger_tags"),
+            }
+
+    die(f"Route '{route_name}' was referenced by capability config but not found in model_routes.yaml")
+
+
+def remote_capabilities_cmd(_: argparse.Namespace) -> None:
+    blocks = load_capability_blocks()
+    print(f"Remote-capable capabilities from: {CONFIG_DIR / 'capability_routes.yaml'}")
+    print()
+
+    found = False
+    for name, block in blocks.items():
+        remote_allowed = (block_field(block, "remote_allowed") or "false").lower()
+        if remote_allowed != "true":
+            continue
+
+        found = True
+        preferred = block_list_values(block, "preferred_routes")
+        fallback = block_list_values(block, "fallback_routes")
+        tags = block_list_values(block, "trigger_tags")
+
+        print(f"- {name}")
+        print(f"  description: {block_field(block, 'description') or '-'}")
+        print(f"  preferred_routes: {', '.join(preferred) if preferred else '-'}")
+        print(f"  fallback_routes: {', '.join(fallback) if fallback else '-'}")
+        print(f"  remote_read_only: {block_field(block, 'remote_read_only') or '-'}")
+        print(f"  requires_human_approval: {block_field(block, 'requires_human_approval') or '-'}")
+        if tags:
+            print(f"  trigger_tags: {', '.join(tags)}")
+        print()
+
+    if not found:
+        print("No remote-capable capabilities found.")
+
+
+def request_remote_cmd(args: argparse.Namespace) -> None:
+    capability = args.capability
+    request_text = args.request_text
+
+    tid = current_task_id()
+    td = task_dir(tid)
+
+    cap = resolve_capability(capability)
+    if cap["remote_allowed"] != "true":
+        die(f"Capability is not remote-enabled: {capability}")
+
+    if not cap["preferred_routes"]:
+        die(f"Capability has no preferred_routes: {capability}")
+
+    selected_route = cap["preferred_routes"][0]
+    route = resolve_route(selected_route)
+
+    remote_dir = td / "remote"
+    remote_dir.mkdir(parents=True, exist_ok=True)
+
+    request_file = remote_dir / f"request.{capability}.md"
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    request_file.write_text(
+        f"# Remote Request\n\n"
+        f"## Status\n\npending_approval\n\n"
+        f"## Task ID\n\n{tid}\n\n"
+        f"## Capability\n\n{capability}\n\n"
+        f"## Selected Route\n\n{selected_route}\n\n"
+        f"## Fallback Routes\n\n{', '.join(cap.get('fallback_routes', [])) or '-'}\n\n"
+        f"## Provider\n\n{route.get('provider', '-')}\n\n"
+        f"## Model\n\n{route.get('model', '-')}\n\n"
+        f"## Remote Read Only\n\n{cap.get('remote_read_only', '-')}\n\n"
+        f"## Timestamp\n\n{timestamp}\n\n"
+        f"## Request Text\n\n{request_text}\n"
+    )
+
+    print(f"Remote request created: {request_file}")
+
+
+def approve_remote_cmd(args: argparse.Namespace) -> None:
+    capability = args.capability
+
+    tid = current_task_id()
+    td = task_dir(tid)
+
+    remote_dir = td / "remote"
+    request_file = remote_dir / f"request.{capability}.md"
+    approved_file = remote_dir / f"approved.{capability}.md"
+
+    if not request_file.exists():
+        die(f"Missing remote request file: {request_file}")
+
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    approved_file.write_text(
+        f"# Approved Remote Request\n\n"
+        f"## Status\n\napproved\n\n"
+        f"## Approved By\n\nhuman\n\n"
+        f"## Timestamp\n\n{timestamp}\n\n"
+        f"## Source Request\n\n{request_file}\n\n"
+        f"## Approved Content\n\n"
+        f"{request_file.read_text()}\n"
+    )
+
+    print(f"Remote request approved: {approved_file}")
+
+
+def remote_run_cmd(args: argparse.Namespace) -> None:
+    capability = args.capability
+
+    if not getattr(args, "stub", False):
+        die("remote-run currently requires --stub. Real endpoint execution is not enabled.")
+
+    tid = current_task_id()
+    td = task_dir(tid)
+
+    cap = resolve_capability(capability)
+    if cap["remote_allowed"] != "true":
+        die(f"Capability is not remote-enabled: {capability}")
+
+    if not cap["preferred_routes"]:
+        die(f"Capability has no preferred_routes: {capability}")
+
+    selected_route = cap["preferred_routes"][0]
+    route = resolve_route(selected_route)
+
+    remote_dir = td / "remote"
+    outbox_dir = td / "outbox"
+    remote_dir.mkdir(parents=True, exist_ok=True)
+    outbox_dir.mkdir(parents=True, exist_ok=True)
+
+    approved_file = remote_dir / f"approved.{capability}.md"
+    output_file = outbox_dir / f"remote.{capability}.md"
+
+    if not approved_file.exists():
+        die(f"Missing approved remote request file: {approved_file}")
+
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    output_file.write_text(
+        f"# Remote Stub Output\n\n"
+        f"## Status\n\nstub_not_executed\n\n"
+        f"## Task ID\n\n{tid}\n\n"
+        f"## Capability\n\n{capability}\n\n"
+        f"## Selected Route\n\n{selected_route}\n\n"
+        f"## Provider\n\n{route.get('provider', '-')}\n\n"
+        f"## Model\n\n{route.get('model', '-')}\n\n"
+        f"## Timestamp\n\n{timestamp}\n\n"
+        f"## Result\n\n"
+        f"Remote execution is not enabled yet. This is a governance dry run.\n\n"
+        f"No endpoint call was made. No API key was used. No network call was made.\n"
+    )
+
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = LOGS_DIR / "remote_call_log.jsonl"
+
+    import json
+    record = {
+        "timestamp": timestamp,
+        "task_id": tid,
+        "phase": "remote_run",
+        "capability": capability,
+        "selected_route": selected_route,
+        "provider": route.get("provider", "-"),
+        "model": route.get("model", "-"),
+        "approved_by": "human",
+        "prompt_file": str(approved_file),
+        "output_file": str(output_file),
+        "latency_seconds": 0,
+        "estimated_cost_usd": 0.0,
+        "status": "stub_not_executed",
+    }
+
+    with log_path.open("a") as f:
+        f.write(json.dumps(record) + "\n")
+
+    print(f"Remote stub output written: {output_file}")
+    print(f"Remote call log updated: {log_path}")
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Human-in-the-loop DGX Spark agent workflow conductor")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -1301,6 +1521,23 @@ def main() -> None:
     p = sub.add_parser("context")
     p.add_argument("phase", choices=PHASES)
     p.set_defaults(func=context_cmd)
+
+    p = sub.add_parser("remote-capabilities")
+    p.set_defaults(func=remote_capabilities_cmd)
+
+    p = sub.add_parser("request-remote")
+    p.add_argument("capability")
+    p.add_argument("request_text")
+    p.set_defaults(func=request_remote_cmd)
+
+    p = sub.add_parser("approve-remote")
+    p.add_argument("capability")
+    p.set_defaults(func=approve_remote_cmd)
+
+    p = sub.add_parser("remote-run")
+    p.add_argument("capability")
+    p.add_argument("--stub", action="store_true")
+    p.set_defaults(func=remote_run_cmd)
 
     args = parser.parse_args()
     args.func(args)
