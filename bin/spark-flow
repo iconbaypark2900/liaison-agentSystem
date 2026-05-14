@@ -836,6 +836,206 @@ def validate_cmd(args: argparse.Namespace) -> None:
     raise SystemExit(result.returncode)
 
 
+
+
+# ---------------------------------------------------------------------
+# Phase 2 read-only registry inspection commands
+# ---------------------------------------------------------------------
+
+def load_capabilities_text() -> str:
+    path = CONFIG_DIR / "capability_routes.yaml"
+    if not path.exists():
+        die(f"Missing capability config: {path}")
+    return path.read_text()
+
+
+def capabilities_cmd(_: argparse.Namespace) -> None:
+    text = load_capabilities_text()
+    blocks = extract_yaml_blocks(text, "capabilities")
+
+    print(f"Capability config: {CONFIG_DIR / 'capability_routes.yaml'}")
+    print()
+
+    if not blocks:
+        print("No capabilities found.")
+        return
+
+    for name, block in blocks.items():
+        description = block_field(block, "description") or "-"
+        remote_allowed = block_field(block, "remote_allowed") or "-"
+        remote_read_only = block_field(block, "remote_read_only") or "-"
+        approval = block_field(block, "requires_human_approval") or "-"
+        preferred = block_list_values(block, "preferred_routes")
+        fallback = block_list_values(block, "fallback_routes")
+        tags = block_list_values(block, "trigger_tags")
+
+        print(f"- {name}")
+        print(f"  description: {description}")
+        print(f"  preferred_routes: {', '.join(preferred) if preferred else '-'}")
+        print(f"  fallback_routes: {', '.join(fallback) if fallback else '-'}")
+        print(f"  remote_allowed: {remote_allowed}")
+        print(f"  remote_read_only: {remote_read_only}")
+        print(f"  requires_human_approval: {approval}")
+        if tags:
+            print(f"  trigger_tags: {', '.join(tags)}")
+        print()
+
+
+def capability_cmd(args: argparse.Namespace) -> None:
+    name = args.name
+    text = load_capabilities_text()
+    blocks = extract_yaml_blocks(text, "capabilities")
+
+    if name not in blocks:
+        print(f"Capability not found: {name}")
+        print()
+        print("Available capabilities:")
+        for key in blocks:
+            print(f"  - {key}")
+        raise SystemExit(1)
+
+    block = blocks[name]
+    print(f"Capability: {name}")
+    print(f"Config: {CONFIG_DIR / 'capability_routes.yaml'}")
+    print()
+
+    description = block_field(block, "description") or "-"
+    remote_allowed = block_field(block, "remote_allowed") or "-"
+    remote_read_only = block_field(block, "remote_read_only") or "-"
+    approval = block_field(block, "requires_human_approval") or "-"
+    preferred = block_list_values(block, "preferred_routes")
+    fallback = block_list_values(block, "fallback_routes")
+    tags = block_list_values(block, "trigger_tags")
+
+    print(f"description: {description}")
+    print(f"preferred_routes: {', '.join(preferred) if preferred else '-'}")
+    print(f"fallback_routes: {', '.join(fallback) if fallback else '-'}")
+    print(f"remote_allowed: {remote_allowed}")
+    print(f"remote_read_only: {remote_read_only}")
+    print(f"requires_human_approval: {approval}")
+    if tags:
+        print(f"trigger_tags: {', '.join(tags)}")
+
+    print()
+    print("Resolution preview:")
+
+    if preferred:
+        selected = preferred[0]
+        print(f"  selected_route: {selected}")
+        print(f"  fallback_routes: {', '.join(fallback) if fallback else '-'}")
+
+        route_text = load_routes_text()
+        found = False
+        for section in ["local_models", "remote_models", "quantum_models"]:
+            route_blocks = extract_yaml_blocks(route_text, section)
+            if selected in route_blocks:
+                selected_block = route_blocks[selected]
+                print(f"  route_section: {section}")
+                print(f"  provider: {block_field(selected_block, 'provider') or '-'}")
+                print(f"  model: {block_field(selected_block, 'model') or '-'}")
+                print(f"  agent: {block_field(selected_block, 'agent') or '-'}")
+                found = True
+                break
+        if not found:
+            print("  selected_route_status: route not found in model_routes.yaml")
+
+
+def validations_cmd(_: argparse.Namespace) -> None:
+    path = CONFIG_DIR / "validation_profiles.yaml"
+    if not path.exists():
+        die(f"Missing validation profile config: {path}")
+
+    text = path.read_text()
+    blocks = extract_yaml_blocks(text, "profiles")
+
+    print(f"Validation profile config: {path}")
+    print()
+
+    if not blocks:
+        print("No validation profiles found.")
+        return
+
+    for name, block in blocks.items():
+        script = block_field(block, "script") or "-"
+        required = block_list_values(block, "required_files")
+        print(f"- {name}")
+        print(f"  script: {script}")
+        print(f"  required_files: {', '.join(required) if required else '-'}")
+        print()
+
+
+def skills_cmd(_: argparse.Namespace) -> None:
+    path = CONFIG_DIR / "skill_resolution.yaml"
+    if not path.exists():
+        die(f"Missing skill resolution config: {path}")
+
+    print(f"Skill resolution config: {path}")
+    print()
+
+    text = path.read_text()
+
+    current_workflow = None
+    current_phase = None
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped == "version: 1" or stripped == "workflows:":
+            continue
+
+        if line.startswith("  ") and not line.startswith("    ") and stripped.endswith(":"):
+            current_workflow = stripped[:-1]
+            print(f"- workflow: {current_workflow}")
+            current_phase = None
+            continue
+
+        if line.startswith("    ") and not line.startswith("      ") and stripped.endswith(":"):
+            current_phase = stripped[:-1]
+            print(f"  {current_phase}:")
+            continue
+
+        if line.startswith("      - "):
+            skill = stripped[2:].strip()
+            print(f"    - {skill}")
+
+    print()
+    print(f"Global skill directory: {AGENT_SYSTEM_DIR / 'skills'}")
+
+
+def research_workers_cmd(_: argparse.Namespace) -> None:
+    path = CONFIG_DIR / "research_workers.yaml"
+    if not path.exists():
+        die(f"Missing research worker config: {path}")
+
+    text = path.read_text()
+    blocks = extract_yaml_blocks(text, "research_workers")
+
+    print(f"Research worker config: {path}")
+    print()
+
+    if not blocks:
+        print("No research workers found.")
+        return
+
+    for name, block in blocks.items():
+        provider = block_field(block, "provider") or "-"
+        tool = block_field(block, "tool") or "-"
+        status = block_field(block, "status") or "-"
+        approval = block_field(block, "requires_human_approval") or "-"
+        sandbox = block_field(block, "sandbox_only") or "-"
+        use_for = block_list_values(block, "use_for")
+        forbidden = block_list_values(block, "forbidden")
+
+        print(f"- {name}")
+        print(f"  provider: {provider}")
+        print(f"  tool: {tool}")
+        print(f"  status: {status}")
+        print(f"  requires_human_approval: {approval}")
+        print(f"  sandbox_only: {sandbox}")
+        print(f"  use_for: {', '.join(use_for) if use_for else '-'}")
+        if forbidden:
+            print(f"  forbidden: {', '.join(forbidden)}")
+        print()
+
 def budget_cmd(_: argparse.Namespace) -> None:
     limits_path = CONFIG_DIR / "budget_limits.yaml"
     log_path = LOGS_DIR / "remote_call_log.jsonl"
@@ -930,6 +1130,22 @@ def main() -> None:
 
     p = sub.add_parser("budget")
     p.set_defaults(func=budget_cmd)
+
+    p = sub.add_parser("capabilities")
+    p.set_defaults(func=capabilities_cmd)
+
+    p = sub.add_parser("capability")
+    p.add_argument("name")
+    p.set_defaults(func=capability_cmd)
+
+    p = sub.add_parser("validations")
+    p.set_defaults(func=validations_cmd)
+
+    p = sub.add_parser("skills")
+    p.set_defaults(func=skills_cmd)
+
+    p = sub.add_parser("research-workers")
+    p.set_defaults(func=research_workers_cmd)
 
     args = parser.parse_args()
     args.func(args)
