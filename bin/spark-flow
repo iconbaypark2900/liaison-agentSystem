@@ -1036,6 +1036,157 @@ def research_workers_cmd(_: argparse.Namespace) -> None:
             print(f"  forbidden: {', '.join(forbidden)}")
         print()
 
+
+def context_cmd(args: argparse.Namespace) -> None:
+    """Read-only command to generate context bundles for a given phase."""
+    phase = args.phase
+    if phase not in ROUTES:
+        die(f"Unknown phase: {phase}")
+
+    tid = current_task_id()
+    td = task_dir(tid)
+    state = read_state(tid)
+    
+    # Create task context directory
+    context_dir = td / "context"
+    context_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Read task description from TASK.md
+    task_file = td / "TASK.md"
+    task_desc = "No task description found"
+    if task_file.exists():
+        task_desc = task_file.read_text()
+    
+    # Get current task state if available
+    current_state = state.get("CURRENT_PHASE", "unknown")
+    
+    # Get approved prior outputs
+    approved_files = sorted((td / "approved").glob("*.md"))
+    approved_content = []
+    for approved_file in approved_files:
+        approved_content.append(f"- {approved_file.name}")
+        approved_content.append(approved_file.read_text())
+        approved_content.append("")
+    
+    # Get handoff file if present
+    handoff_file = td / "handoff" / f"{phase}.md"
+    handoff_content = ""
+    if handoff_file.exists():
+        handoff_content = handoff_file.read_text()
+    
+    # Get skills resolved from skill_resolution.yaml (hardcoded for now based on the example)
+    skills = ["spark-flow-planning", "spark-flow-build", "testing-hardening", "dependency-discipline", "spark-flow-review", "security-review", "spark-flow-closeout"]
+    
+    # Get policy files from ~/spark/agent-system/policies/
+    policies = []
+    policies_dir = AGENT_SYSTEM_DIR / "policies"
+    if policies_dir.exists():
+        for policy_file in policies_dir.glob("*.md"):
+            policies.append(f"- {policy_file.name}")
+            policies.append(policy_file.read_text())
+            policies.append("")
+    
+    # Get validation summaries from outbox/test.*.md if present
+    validation_summaries = []
+    outbox_dir = td / "outbox"
+    if outbox_dir.exists():
+        test_files = sorted(outbox_dir.glob("test.*.md"))
+        for test_file in test_files:
+            validation_summaries.append(f"- {test_file.name}")
+            validation_summaries.append(test_file.read_text())
+            validation_summaries.append("")
+    
+    # Write context bundle files
+    context_md = context_dir / f"{phase}.md"
+    context_md.write_text(dedent(f"""\
+        # Context bundle for task: {tid}
+        ## Phase: {phase}
+
+        ### Task ID
+        {tid}
+
+        ### Task Description
+        {task_desc}
+
+        ### Requested Phase
+        {phase}
+
+        ### Current Task State
+        {current_state}
+
+        ### Approved Prior Outputs
+        {'\n'.join(approved_content) if approved_content else "No approved files found"}
+
+        ### Handoff File for Phase
+        {handoff_content if handoff_content else "No handoff file found"}
+
+        ### Resolved Skills
+        {'\n'.join(skills) if skills else "No skills resolved"}
+
+        ### Relevant Policies
+        {'\n'.join(policies) if policies else "No policy files found"}
+
+        ### Validation Summaries
+        {'\n'.join(validation_summaries) if validation_summaries else "No validation summaries found"}
+
+        ### Required Output File for Phase
+        {outbox_dir / f"{phase}.md"}
+
+        ### Instruction
+        Chat history is not the source of truth for this phase.
+    """))
+
+    # Write manifest file
+    manifest_file = context_dir / f"{phase}.manifest.json"
+    import json
+    manifest = {
+        "task_id": tid,
+        "task_description": task_desc,
+        "requested_phase": phase,
+        "current_task_state": current_state,
+        "approved_prior_outputs": [f.name for f in approved_files],
+        "handoff_file_for_phase": str(handoff_file) if handoff_file.exists() else None,
+        "resolved_skills": skills,
+        "relevant_policies": [f.name for f in policies_dir.glob("*.md")] if policies_dir.exists() else [],
+        "validation_summaries": [f.name for f in test_files] if test_files else [],
+        "required_output_file": str(outbox_dir / f"{phase}.md"),
+        "instruction": "Chat history is not the source of truth for this phase."
+    }
+    manifest_file.write_text(json.dumps(manifest, indent=2))
+    
+    # Write build summary to outbox directory
+    build_summary_file = td / "outbox" / "build.md"
+    build_summary_file.write_text(dedent(f"""\
+        # BUILD summary for task: {tid}
+
+        ## Context bundle generation
+
+        Generated context bundle for phase: {phase}
+        
+        ### Files created:
+        - {context_md}
+        - {manifest_file}
+        
+        Context bundle contains:
+        - task id: {tid}
+        - task description from TASK.md
+        - requested phase: {phase}
+        - current task state: {current_state}
+        - approved prior outputs
+        - handoff file for the phase if present
+        - skill names resolved from ~/spark/agent-system/config/skill_resolution.yaml
+        - relevant policy files from ~/spark/agent-system/policies/
+        - validation summaries from outbox/test.*.md if present
+        - required output file path for the phase
+        - instruction that chat history is not the source of truth
+    """))
+
+    print(f"Context bundle generated for phase {phase}")
+    print(f"Files created:")
+    print(f"  {context_md}")
+    print(f"  {manifest_file}")
+    print(f"  {build_summary_file}")
+
 def budget_cmd(_: argparse.Namespace) -> None:
     limits_path = CONFIG_DIR / "budget_limits.yaml"
     log_path = LOGS_DIR / "remote_call_log.jsonl"
@@ -1146,6 +1297,10 @@ def main() -> None:
 
     p = sub.add_parser("research-workers")
     p.set_defaults(func=research_workers_cmd)
+
+    p = sub.add_parser("context")
+    p.add_argument("phase", choices=PHASES)
+    p.set_defaults(func=context_cmd)
 
     args = parser.parse_args()
     args.func(args)

@@ -12,3 +12,6 @@ __pycache__/
 
 # Generated logs may be committed selectively if useful
 logs/*.tmp
+
+# Local spark-flow workflow state
+.spark-flow/
