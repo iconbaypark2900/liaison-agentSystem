@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import json
 from pathlib import Path
 from textwrap import dedent
 from datetime import datetime
@@ -83,6 +84,88 @@ def current_task_id() -> str:
     if not CURRENT_FILE.exists():
         die('No current task. Run: spark-flow init <task-id> "description"')
     return CURRENT_FILE.read_text().strip()
+
+
+def append_event(event: str, phase: str | None = None, command: str | None = None, details: dict | None = None) -> None:
+    """Writes JSONL to .spark-flow/tasks/<current-task>/events.jsonl"""
+    task_id = current_task_id()
+    task_dir = Path(".spark-flow/tasks") / task_id
+    events_file = task_dir / "events.jsonl"
+    
+    event_data = {
+        "timestamp": now(),
+        "event": event,
+        "task_id": task_id,
+    }
+    
+    if phase:
+        event_data["phase"] = phase
+    if command:
+        event_data["command"] = command
+    if details:
+        event_data["details"] = details
+        
+    with open(events_file, "a") as f:
+        f.write(json.dumps(event_data) + "\n")
+
+
+def safe_task_path(*parts) -> Path:
+    """Returns a path under .spark-flow/tasks/<current-task>/, with security checks"""
+    task_id = current_task_id()
+    base_path = Path(".spark-flow/tasks") / task_id
+    full_path = base_path.joinpath(*parts)
+    
+    # Check that path doesn't escape the task directory
+    try:
+        # Resolve the path to its absolute form
+        resolved = full_path.resolve()
+        # Check if it is actually under the base_path
+        if not resolved.is_relative_to(base_path):
+            die(f"Path {full_path} tries to escape the task directory")
+    except Exception:
+        die(f"Invalid path: {full_path}")
+    
+    # Check for nested duplicate directory (e.g., .spark-flow/tasks/<task-id>/<task-id>/)
+    if str(full_path).endswith(f"/{task_id}/"):
+        die(f"Path {full_path} has nested duplicate task directory")
+    
+    return full_path
+
+
+def resolve_skills_for(workflow_name: str, phase: str) -> list[str]:
+    """Reads ~/spark/agent-system/config/skill_resolution.yaml and returns only skills for the requested workflow + phase"""
+    config_path = Path.home() / "spark/agent-system/config/skill_resolution.yaml"
+    
+    if not config_path.exists():
+        die(f"Missing skill resolution config: {config_path}")
+        
+    # Read the file content
+    content = config_path.read_text()
+    
+    # Simple YAML-like parsing for this specific use case
+    current_workflow = None
+    current_phase = None
+    skills = []
+    
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped == "version: 1" or stripped == "workflows:":
+            continue
+            
+        if line.startswith("  ") and not line.startswith("    ") and stripped.endswith(":"):
+            current_workflow = stripped[:-1]
+            current_phase = None
+        elif line.startswith("    ") and not line.startswith("      ") and stripped.endswith(":"):
+            current_phase = stripped[:-1]
+            # Only collect skills if we're in the right workflow and phase
+            if current_workflow == workflow_name and current_phase == phase:
+                skills = []
+        elif line.startswith("      - "):
+            skill = stripped[2:].strip()
+            if current_workflow == workflow_name and current_phase == phase:
+                skills.append(skill)
+    
+    return skills
 
 
 def task_dir(task_id: str | None = None) -> Path:
@@ -1074,8 +1157,8 @@ def context_cmd(args: argparse.Namespace) -> None:
     if handoff_file.exists():
         handoff_content = handoff_file.read_text()
     
-    # Get skills resolved from skill_resolution.yaml (hardcoded for now based on the example)
-    skills = ["spark-flow-planning", "spark-flow-build", "testing-hardening", "dependency-discipline", "spark-flow-review", "security-review", "spark-flow-closeout"]
+    # Get skills resolved from skill_resolution.yaml
+    skills = resolve_skills_for("python-cli", phase)
     
     # Get policy files from ~/spark/agent-system/policies/
     policies = []
@@ -1186,6 +1269,22 @@ def context_cmd(args: argparse.Namespace) -> None:
     print(f"  {context_md}")
     print(f"  {manifest_file}")
     print(f"  {build_summary_file}")
+    
+    # Optionally show the context file
+    if getattr(args, 'show', False):
+        print("\n--- Context file contents ---")
+        print(context_md.read_text())
+
+    if getattr(args, "show", False):
+        try:
+            tid = current_task_id()
+            md_path = task_dir(tid) / "context" / f"{args.phase}.md"
+            print()
+            print(md_path.read_text())
+        except Exception as exc:
+            die(f"Could not show generated context bundle: {exc}")
+
+
 
 def budget_cmd(_: argparse.Namespace) -> None:
     limits_path = CONFIG_DIR / "budget_limits.yaml"
@@ -1607,6 +1706,66 @@ def research_run_cmd(args: argparse.Namespace) -> None:
     print(f"Research call log updated: {log_path}")
 
 
+def events_cmd(args: argparse.Namespace) -> None:
+    """Read current task events.jsonl"""
+    task_id = current_task_id()
+    task_dir = Path(".spark-flow/tasks") / task_id
+    events_file = task_dir / "events.jsonl"
+    
+    if not events_file.exists():
+        print("No events found for current task.")
+        return
+    
+    # Read and print all events
+    with open(events_file, "r") as f:
+        for line in f:
+            if line.strip():
+                print(line.strip())
+
+
+def skills_for_cmd(args: argparse.Namespace) -> None:
+    """Return skills for workflow and phase"""
+    workflow_name = args.workflow_name
+    phase = args.phase
+    
+    skills = resolve_skills_for(workflow_name, phase)
+    
+    for skill in skills:
+        print(skill)
+
+
+def check_state_cmd(args: argparse.Namespace) -> None:
+    """Verify current task state"""
+    task_id = current_task_id()
+    
+    # Check that .spark-flow/current exists
+    if not CURRENT_FILE.exists():
+        die("Missing .spark-flow/current")
+    
+    # Check that current task directory exists
+    task_dir = Path(".spark-flow/tasks") / task_id
+    if not task_dir.exists():
+        die(f"Missing task directory: {task_dir}")
+    
+    # Check that STATE.txt exists
+    state_file = task_dir / "STATE.txt"
+    if not state_file.exists():
+        die(f"Missing STATE.txt: {state_file}")
+    
+    # Check that TASK.md exists
+    task_file = task_dir / "TASK.md"
+    if not task_file.exists():
+        die(f"Missing TASK.md: {task_file}")
+    
+    # Check for nested duplicate directory
+    duplicate_check = task_dir / task_id
+    if duplicate_check.exists():
+        die(f"Nested duplicate directory found: {duplicate_check}")
+    
+    # If we get here, all checks passed
+    print("All state checks passed.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Human-in-the-loop DGX Spark agent workflow conductor")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -1673,6 +1832,7 @@ def main() -> None:
 
     p = sub.add_parser("context")
     p.add_argument("phase", choices=PHASES)
+    p.add_argument("--show", action="store_true")
     p.set_defaults(func=context_cmd)
 
     p = sub.add_parser("remote-capabilities")
@@ -1705,6 +1865,18 @@ def main() -> None:
     p.add_argument("worker_name")
     p.add_argument("--stub", action="store_true")
     p.set_defaults(func=research_run_cmd)
+
+    # Add new commands for conductor hardening
+    p = sub.add_parser("events")
+    p.set_defaults(func=events_cmd)
+
+    p = sub.add_parser("skills-for")
+    p.add_argument("workflow_name")
+    p.add_argument("phase")
+    p.set_defaults(func=skills_for_cmd)
+
+    p = sub.add_parser("check-state")
+    p.set_defaults(func=check_state_cmd)
 
     args = parser.parse_args()
     args.func(args)
