@@ -1,0 +1,12 @@
+.venv/
+test_env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+dist/
+build/
+
+# Local agent workflow state
+.spark-flow/

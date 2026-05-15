@@ -1,20 +1,40 @@
-# Runtime logs and temporary files
-*.tmp
-*.bak
-*.backup
-__pycache__/
-.pytest_cache/
-
-# Local secrets
-.env
-*.env
-*.local.json
-
-# Generated logs may be committed selectively if useful
-logs/*.tmp
-
-# Local spark-flow workflow state
+# Runtime workflow state
 .spark-flow/
 
 # Runtime logs
 logs/
+*.log
+
+# Secrets and local env
+.env
+*.env
+*.local.json
+secrets/
+credentials/
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+dist/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+
+# Temporary files
+tmp/
+*.tmp
+*.bak
