@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-05-15 — Packaging follow-up
+
+* Added MIT `LICENSE` (2026, iconbaypark2900).
+* Added core docs: `docs/architecture.md`, `docs/operating_model.md`, `docs/command_reference.md`; linked them from README.
+* Added root `tests/` README and `tests/smoke_spark_flow.sh` for CLI smoke checks.
+* Populated `departments/` and `templates/` with READMEs and small example stubs.
+
 ## phase-8a-nim-dry-run-payload
 
 * Added NIM remote dry-run payload generation.

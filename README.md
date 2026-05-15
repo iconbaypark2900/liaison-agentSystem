@@ -36,6 +36,13 @@ Completed phases:
 spark-flow
 ```
 
+## Documentation
+
+- [Architecture](docs/architecture.md) — control plane vs runtime and directory map
+- [Operating model](docs/operating_model.md) — human-in-the-loop, approvals, audit paths
+- [Command reference](docs/command_reference.md) — `spark-flow` subcommands
+- [Phase index](docs/phases/phase_index.md) — milestone tags
+
 ## Runtime Rule
 
 Do not commit runtime state:
