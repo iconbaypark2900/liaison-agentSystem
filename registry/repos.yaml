@@ -1,0 +1,115 @@
+version: 1
+repos:
+  # ── tradeFluxsimulator mirrors (archive sources; sigma-integration.md owns scope) ──
+  tradeflux_archive:
+    path: ~/quantumGlobalGroup/tradeFluxsimulator
+    role: registered project — archived integration source (canonical archive for sigma migration)
+    default_profile: python
+  tradeflux_cbc:
+    path: /home/iconbaypark2900/creatorsByChoice/tradeFluxsimulator
+    role: registered project — tradeFluxsimulator mirror (creatorsByChoice)
+    default_profile: none
+  tradeflux_jab:
+    path: /home/iconbaypark2900/jabCreative/tradeFluxsimulator
+    role: registered project — tradeFluxsimulator mirror (jabCreative)
+    default_profile: none
+  tradeflux_tsi:
+    path: /home/iconbaypark2900/tradeSecretsInitiative/tradeFluxsimulator
+    role: registered project — tradeFluxsimulator mirror (tradeSecretsInitiative)
+    default_profile: none
+
+  # ── Auxiliary registered non-DGX entries ──
+  local_agents_docs:
+    path: ~/spark/docs/local-agents
+    role: operator documentation for hub agents and Liaison
+    default_profile: none
+  docuQuery:
+    path: /home/iconbaypark2900/creatorsByChoice/docuQuery
+    role: registered project from creatorsByChoice
+    default_profile: none
+  polymarket_btc:
+    path: /home/iconbaypark2900/jabCreative/polymarket_btc
+    role: registered project from jabCreative
+    default_profile: none
+  polymarket_calculator:
+    path: /home/iconbaypark2900/jabCreative/polymarket_calculator
+    role: registered project from jabCreative
+    default_profile: none
+  research:
+    path: /home/iconbaypark2900/quantumGlobalGroup/research
+    role: registered project from quantumGlobalGroup
+    default_profile: none
+
+  # ── DGX Spark Tier 0 — 18 project registry (2026-05-30) ──
+  clinical_suite:
+    path: ~/creatorsByChoice/clinical-suite
+    role: DGX Tier 0 — clinical suite
+    default_profile: python
+  adaptive_graph_rag:
+    path: ~/creatorsByChoice/adaptive-graph-rag
+    role: DGX Tier 0 — adaptive graph RAG
+    default_profile: python
+  quantum_rx:
+    path: ~/creatorsByChoice/quantumRX
+    role: DGX Tier 0 — quantumRX
+    default_profile: quantum
+  sigma:
+    path: ~/quantumGlobalGroup/sigma
+    role: registered project — trading platform (see docs/local-agents/projects/); DGX Tier 0
+    default_profile: sigma
+  materialScience:
+    path: ~/quantumGlobalGroup/materialScience
+    role: DGX Tier 0 — MQAI materials discovery
+    default_profile: none
+  hybrid_qml_kg_poc:
+    path: ~/quantumGlobalGroup/hybrid-qml-kg-poc
+    role: DGX Tier 0 — hybrid QML KG POC
+    default_profile: quantum
+  qgg_quantum_dispatch:
+    path: ~/quantumGlobalGroup/qgg_quantum_dispatch
+    role: DGX Tier 0 — QGG quantum dispatch
+    default_profile: quantum
+  qcrypt_rng:
+    path: ~/quantumGlobalGroup/qcrypt-rng
+    role: DGX Tier 0 — qcrypt RNG
+    default_profile: quantum
+  qgq_platform:
+    path: ~/quantumGlobalGroup/qgq-platform
+    role: DGX Tier 0 — QGQ platform
+    default_profile: python
+  biomedical:
+    path: /home/iconbaypark2900/quantumGlobalGroup/biomedical
+    role: DGX Tier 0 — biomedical
+    default_profile: none
+  quantum_practitioner_lab:
+    path: ~/quantumGlobalGroup/quantum_practitioner_lab
+    role: DGX Tier 0 — quantum practitioner lab
+    default_profile: quantum
+  quantum_hybrid_portfolio:
+    path: /home/iconbaypark2900/quantumGlobalGroup/quantum-hybrid-portfolio
+    role: DGX Tier 0 — quantum hybrid portfolio
+    default_profile: python
+  qgg_research:
+    path: ~/quantumGlobalGroup/qgg_research
+    role: DGX Tier 0 — QGG research
+    default_profile: quantum
+  financial_alpha_risk_research_lab:
+    path: ~/dataScience/financial_alpha_risk_research_lab
+    role: DGX Tier 0 — financial alpha risk lab
+    default_profile: python
+  medical_evidence_graph_outcomes_lab:
+    path: ~/dataScience/medical_evidence_graph_outcomes_lab
+    role: DGX Tier 0 — medical evidence graph lab
+    default_profile: python
+  quantum_hybrid_research_optimization_lab:
+    path: ~/dataScience/quantum_hybrid_research_optimization_lab
+    role: DGX Tier 0 — quantum hybrid research optimization lab
+    default_profile: python
+  secure_ai_data_governance_control_plane:
+    path: ~/dataScience/secure_ai_data_governance_control_plane
+    role: DGX Tier 0 — secure AI data governance
+    default_profile: none
+  tokenized_infra_rwa_intel_platform:
+    path: ~/dataScience/tokenized_infra_rwa_intel_platform
+    role: DGX Tier 0 — tokenized infra RWA intel
+    default_profile: none

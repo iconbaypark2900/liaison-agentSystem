@@ -58,6 +58,7 @@ workflows:
     research:
       - ml-intern-research
       - dataset-inspection
+      - synthetic-data-designer
       - hf-experiment-runner
     validate:
       - scientific-validation
@@ -85,3 +86,26 @@ workflows:
       - nvidia-ising-review
     close:
       - spark-flow-closeout
+
+  data-flywheel:
+    curate:
+      - synthetic-data-designer
+      - dataset-inspection
+    orchestrate:
+      - synthetic-data-designer
+      - spark-flow-planning
+    experiment:
+      - synthetic-data-designer
+      - ml-intern-research
+    trace:
+      - synthetic-data-designer
+      - provenance-review
+    evaluate:
+      - synthetic-data-designer
+      - testing-hardening
+    review:
+      - spark-flow-review
+      - synthetic-data-designer
+    close:
+      - spark-flow-closeout
+

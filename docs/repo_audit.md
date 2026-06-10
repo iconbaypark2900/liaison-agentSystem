@@ -2,7 +2,7 @@
 
 ## Source Repo
 
-`~/spark/agent-system`
+`$LIAISON_ROOT`
 
 ## Runtime Demo Repo
 

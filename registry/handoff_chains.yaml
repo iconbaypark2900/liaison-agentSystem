@@ -1,0 +1,66 @@
+version: 1
+source: registry/hub_skills.yaml#project_agent_patterns
+note: >
+  Thin alias index — canonical definitions live in hub_skills.yaml project_agent_patterns.
+  Use `liaison start-pattern <id>` to scaffold a task with the chain BRIEF and checklist.
+chains:
+  - id: hermes-led-slice
+    label: Hermes-led with specialist reports
+    chain: [hermes]
+    specialists: [qca, ml_intern, unsloth_studio]
+    default: true
+    when: Default product engineering — specialists attach via liaison outbox if needed
+
+  - id: research-to-calibration
+    label: ML Intern → QCA → Hermes
+    chain: [ml_intern, qca, hermes]
+    when: Paper or benchmark code needs VLM plot review then integration
+    steps:
+      - ml-intern produces research_report in outbox
+      - qca reviews plots / QCalEval
+      - hermes merges to main with tests
+
+  - id: train-and-deploy
+    label: ML Intern → Unsloth → Hermes
+    chain: [ml_intern, unsloth_studio, hermes]
+    when: Dataset discovery, GPU fine-tune, then git/deploy
+    steps:
+      - ml-intern prepares JSONL / dataset card
+      - unsloth studio fine-tune and export
+      - hermes wires vLLM/Ollama and PR
+
+  - id: governed-slice
+    label: Hermes explore → Liaison govern
+    chain: [hermes, liaison]
+    when: Vertical slice needs plan/build/review/close audit trail (exceptional)
+    steps:
+      - hermes explores; liaison init when scope is clear
+      - phase executor or reporter attach per phase
+      - liaison close-task with validation profile
+
+  - id: calibration-only
+    label: QCA advisory loop
+    chain: [qca, hermes]
+    when: Ising / calibration without ML Intern
+    steps:
+      - qca serve experiments or plot analysis
+      - hermes integrates config and API changes
+
+  - id: flywheel-improve
+    label: Data flywheel + Hermes
+    chain: [data_flywheel, hermes, liaison]
+    when: Production traffic → curated datasets → eval promotion
+    steps:
+      - liaison init --workflow data-flywheel
+      - observe/curate/evaluate artifacts
+      - hermes ships routing or model changes after approval
+
+  - id: cross-machine-slice
+    label: DGX build → EVO eval → DGX closeout
+    chain: [hermes, hermes, liaison]
+    machines: [dgx_spark, evo_x2, dgx_spark]
+    when: API-heavy eval or orchestration step better suited to EVO-X2
+    steps:
+      - "DGX: liaison init cross-001; Hermes build; snapshot + branch"
+      - "EVO: pull branch; Hermes API eval; liaison attach results"
+      - "DGX: liaison approve-artifact; close-task with HANDOFFS.md"

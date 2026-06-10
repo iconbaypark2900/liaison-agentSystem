@@ -1,0 +1,116 @@
+# Curated rolodex resumes — merged over SKILL.md / registry-derived defaults.
+# Key by rolodex entry id (e.g. hermes:ascii-art) or hub agent id (e.g. agent:ml_intern).
+version: 1
+
+profiles:
+  hermes:ascii-art:
+    headline: "ASCII art for terminals and READMEs"
+    best_for: "Demos, CLI banners, docs flair, quick text-only visuals — not production UI"
+    when_to_use: "Creative or debug slices; pyfiglet/cowsay/boxes/image-to-ascii via local CLI or free APIs"
+    capabilities:
+      - "pyfiglet text banners (571 fonts, local)"
+      - "asciified REST API banners (no install)"
+      - "cowsay speech bubbles"
+      - "Unicode box drawing"
+      - "Image → ASCII conversion"
+    limits: "Plain-text only; not for governed closeout artifacts or shipped UI assets"
+
+  agent:hermes:
+    headline: "Default engineer and Kanban coordinator"
+    summary: "Owns git/PR integration, branch work, and coordinating specialist reports. Run from ~/spark; use Hermes skills for domain playbooks. Integrate liaison outbox reports after approve-artifact."
+    best_for: "Default product engineering slices, Hermes-led patterns, git/PR and hub integration"
+    when_to_use: "Default build lane; specialists (ml_intern, qca, unsloth) attach via liaison outbox first"
+    capabilities:
+      - "Kanban and slice coordination on focused repo"
+      - "Git branches, PRs, and integration after specialist attach"
+      - "Hermes skills CLI (hermes -s <skill>) and ~/.hermes/skills catalog"
+      - "Agent-system integration per hermes/guides/workflows"
+    outputs: "report"
+    limits: "Use liaison reporter path before exceptional phase executors (codex/opencode/claude)"
+
+  agent:ml_intern:
+    headline: "ML research and Hugging Face specialist"
+    summary: "Paper-to-code, Hub datasets/models/papers, remote sandbox GPU work, and HF Jobs smoke tests. Produce a research_report, then liaison attach ml_intern so Hermes merges after approval — not a substitute for git closeout."
+    best_for: "Dataset discovery, literature loops, JSONL prep for Unsloth, benchmark reproduction before QCA or Hermes integration"
+    when_to_use: "research-to-calibration and train-and-deploy patterns; when Hub search or sandbox runs precede engineering"
+    capabilities:
+      - "Search and inspect Hugging Face datasets (hf-datasets)"
+      - "Model cards, uploads, Hub operations (hf-hub-models)"
+      - "Paper search and literature loops (hf-papers)"
+      - "Remote GPU sandbox execution (--sandbox-tools)"
+      - "HF Jobs planning and smoke tests (hf-jobs)"
+      - "MCP access to Hub and related services (mcp-hub)"
+    outputs: "research_report"
+    limits: "Specialist lane — attach via liaison; Hermes owns merge, validation profile, and closeout"
+
+  agent:qca:
+    headline: "Quantum calibration and VLM plot review"
+    summary: "Ising/calibration experiments, QCalEval, and vision-language plot review for quantum workflows. Run qca serve; attach specialist_report through liaison for Hermes integration."
+    best_for: "Calibration-only and research-to-calibration patterns; plot/VLM review after ml_intern or bench code exists"
+    when_to_use: "When benchmarks need quantum calibration review or VLM plot analysis before Hermes merges config/API changes"
+    capabilities:
+      - "Quantum calibration and Ising experiment loops"
+      - "VLM plot review and QCalEval"
+      - "Knowledge skills under QCA blueprint data/knowledge/skills"
+      - "Advisory loop with Hermes (calibration-only pattern)"
+    outputs: "specialist_report"
+    limits: "Advisory specialist — not default build owner; integrate via liaison attach"
+
+  agent:unsloth_studio:
+    headline: "Fine-tuning and GGUF export studio"
+    summary: "LoRA/QLoRA in browser UI, GGUF inference, Data Designer curation, and export handoff to Hermes deploy or vLLM compose. Best after ml_intern prepares datasets."
+    best_for: "train-and-deploy pattern; GPU fine-tune and GGUF export after dataset/JSONL prep"
+    when_to_use: "When a slice needs fine-tune, GGUF, or synthetic data design before Hermes wires inference and PR"
+    capabilities:
+      - "LoRA/QLoRA training in browser UI (fine-tuning-ui)"
+      - "GGUF load, chat, studio run CLI (gguf-inference)"
+      - "Dataset curation and synthetic pipelines (data-designer)"
+      - "Exports for Hermes deploy / vLLM compose (export-handoff)"
+    outputs: "training_report"
+    limits: "Training lane — Hermes owns integration, compose, and production deploy"
+
+  agent:liaison:
+    headline: "Governance control plane"
+    summary: "Task lifecycle, debrief, memory, validation gates, and command center — not a separate coding runtime. Use liaison init/attach/approve/close-task around hub agents."
+    best_for: "Governed slices, reporter checklist, registry operations, flywheel and closeout gates"
+    when_to_use: "Always on the operator path; init tasks, attach specialist reports, run validate --profile, close-task"
+    capabilities:
+      - "Task filesystem init, snapshot, attach, approve-artifact"
+      - "Debrief, memory, recommend/choose, gate and validate profiles"
+      - "Command center TUI and JSON snapshot (--json)"
+      - "Registry repos/agents/skills/workflows"
+    outputs: "governance_record"
+    limits: "Orchestration only — implementation stays with Hermes and specialists"
+
+  agent:codex:
+    headline: "Patch-phase executor (exceptional)"
+    summary: "Surgical patches via liaison start patch / spark-flow patch phase. Prefer liaison attach hermes for default reporter path unless phase-agent ownership is explicitly required."
+    best_for: "Small patch slices when exceptional executor lane is approved"
+    when_to_use: "Only when launch_note exceptional path applies; otherwise Hermes + attach"
+    limits: "exceptional — use reporter path (liaison attach hermes) by default"
+
+  agent:opencode:
+    headline: "Build/close-phase executor (exceptional)"
+    summary: "Implementation and closeout drafts via liaison start build. Default to Hermes reporter path unless phase ownership is required."
+    best_for: "Build or close phases on exceptional executor lane"
+    when_to_use: "Governed-slice pattern with explicit phase executor approval"
+    limits: "exceptional — use reporter path (liaison attach hermes) by default"
+
+  agent:claude:
+    headline: "Plan/review-phase executor (exceptional)"
+    summary: "Planning, architecture, and review via liaison start plan. Default to Hermes + liaison attach for routine slices."
+    best_for: "Plan and review phases when exceptional lane is approved"
+    when_to_use: "Governed-slice audit trail needing plan/review phase CLI"
+    limits: "exceptional — use reporter path (liaison attach hermes) by default"
+
+  agent:data_flywheel:
+    headline: "Production feedback-loop operator"
+    summary: "Observe production traffic, curate datasets, run evaluator scorecards, and promote improvements through governed artifacts — wired to liaison init --workflow data-flywheel."
+    best_for: "flywheel-improve pattern; closed feedback loop with Hermes shipping changes after approval"
+    when_to_use: "When production observations must become curated data and eval promotion before model/routing changes"
+    capabilities:
+      - "liaison init --workflow data-flywheel"
+      - "observe / evaluate / learn artifact loop"
+      - "Traceability and flywheel reports with Hermes integration"
+    outputs: "flywheel_report"
+    limits: "Workflow lane — requires approval gates before promotion"

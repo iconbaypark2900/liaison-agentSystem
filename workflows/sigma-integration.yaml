@@ -1,0 +1,42 @@
+name: sigma-integration
+version: 1
+description: >
+  Reporter-first workflow for tradeFluxsimulator archive inspection and
+  incremental migration into the Sigma trading platform.
+layer: L1
+status: stub
+note: >
+  Declarative scaffold only — no auto-execution. Proves the reporter pattern
+  for Sigma before scaling to full integration slices in L3/L4.
+
+phases:
+  - id: archive-inspect
+    label: Archive inspection (read-only)
+    agent: hermes
+    liaison_commands:
+      - liaison init sigma-tfs-<n> "<slice goal>"
+      - liaison snapshot --show
+      - liaison attach hermes --text "<assessment>"
+      - liaison decision "<operator scope decision>"
+    artifacts:
+      - hermes-report.md
+
+  - id: module-validate
+    label: Module validation
+    agent: hermes
+    liaison_commands:
+      - liaison validate --profile sigma
+      - liaison gate --show
+    artifacts:
+      - test.sigma.md
+
+  - id: closeout
+    label: Reporter closeout
+    agent: operator
+    liaison_commands:
+      - liaison close-task --summary "<outcome; next steps for L4 merge>"
+
+validation_profile: sigma
+checks_script: checks/sigma.sh
+project_guide: ~/spark/docs/local-agents/projects/sigma-integration.md
+merge_layer: L4

@@ -1,0 +1,30 @@
+# Cursor Automation prefill — Liaison weekday digest (A.4)
+# Import via Cursor → Automations → create from draft / paste in editor when supported.
+# Prerequisite: cron on DGX runs scripts/snapshot-command-center.sh
+
+name: "Liaison weekday digest"
+description: "Summarize stale sessions, venture queue, and Tier A intake blockers from memory/snapshots/latest.json"
+workflow:
+  triggers:
+    - cron:
+        cron: "0 8 * * 1-5"
+  actions: []
+  prompts:
+    - prompt: |
+        You are the Liaison operator digest assistant. Read memory/snapshots/latest.json
+        in this workspace (liaison_agentSystem). If generated_at is older than 1 hour,
+        note that the operator should run ./scripts/snapshot-command-center.sh first.
+
+        Produce a short digest (under 40 lines) with:
+
+        1. Stale executor sessions — .stale_executor_sessions[] and long-running .terminal_sessions[]
+        2. Venture queue — .venture_queue_summary (pending_count, running_count, max_active_ventures)
+        3. Tier A projects (sigma, clinical_suite, adaptive_graph_rag, research, materialScience) —
+           recommend liaison project-intake --project <key> --show when blockers likely
+        4. Hub health — .hub_status, .summary.open_tasks, .summary.blockers
+
+        Use jq when helpful. End with: "Next: complete observe-session for stale sessions or fix top intake blocker."
+  model: ""
+  agentOptions:
+    skipInstall: false
+  memoryEnabled: true

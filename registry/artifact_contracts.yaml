@@ -1,0 +1,77 @@
+version: 1
+contracts:
+  report:
+    required_sections:
+      - summary
+      - changed_or_observed_files
+      - validation
+      - risks
+      - next_action
+  specialist_report:
+    required_sections:
+      - request
+      - source_material
+      - findings
+      - caveats
+      - integration_recommendation
+  research_report:
+    required_sections:
+      - question
+      - sources_or_datasets
+      - method
+      - result
+      - validation_needed
+  training_report:
+    required_sections:
+      - dataset
+      - base_model
+      - config
+      - evaluation
+      - export_path
+  approval:
+    required_sections:
+      - artifact
+      - approved_at
+      - constraints
+      - promotion_path
+  flywheel_report:
+    required_sections:
+      - traffic_window
+      - data_sources
+      - curation_rules
+      - orchestration_plan
+      - job_schedule
+      - trace_lineage
+      - evaluation_runs
+      - monitor_metrics
+      - candidate_models
+      - evaluation_metrics
+      - scorecard
+      - latency_cost_accuracy_tradeoff
+      - routing_recommendation
+      - approval_required
+  traceability_report:
+    required_sections:
+      - trace_scope
+      - agent_steps
+      - tool_calls
+      - model_calls
+      - retrieved_context
+      - evaluation_results
+      - latency_cost_safety_metrics
+      - debugging_findings
+      - promotion_decision_link
+  synthetic_data_design:
+    required_sections:
+      - dataset_objective
+      - target_use_and_prohibited_uses
+      - source_seed_policy
+      - record_schema
+      - field_dependencies
+      - sampler_plan
+      - generation_prompts
+      - batch_plan
+      - validation_checks
+      - quality_risks
+      - promotion_path
+

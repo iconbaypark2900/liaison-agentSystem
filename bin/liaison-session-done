@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# End a venture-bound executor session and record outcome to Liaison task artifacts.
+# Usage: liaison-session-done <agent> <exit-code> [log-file]
+# Env: LIAISON_ROOT, optional LIAISON_PROJECT, LIAISON_TASK
+
+set -euo pipefail
+
+AGENT="${1:?agent name required (e.g. hermes)}"
+EXIT_CODE="${2:-0}"
+LOG_FILE="${3:-}"
+
+ROOT="${LIAISON_ROOT:-$HOME/spark/liaison_agentSystem}"
+CLI="$ROOT/.venv/bin/python"
+SPARK="$ROOT/bin/spark-flow"
+if [[ ! -x "$CLI" ]]; then
+  CLI="python3"
+fi
+
+PROJECT="${LIAISON_PROJECT:-}"
+TASK="${LIAISON_TASK:-}"
+
+if [[ -z "$PROJECT" || -z "$TASK" ]]; then
+  MEM="$(pwd)/.spark-flow/memory/operator_session.json"
+  if [[ -f "$MEM" ]]; then
+    PROJECT="${PROJECT:-$(python3 -c "import json; print(json.load(open('$MEM')).get('project_key',''))" 2>/dev/null || true)}"
+    TASK="${TASK:-$(python3 -c "import json; print(json.load(open('$MEM')).get('task_id',''))" 2>/dev/null || true)}"
+  fi
+fi
+
+ARGS=(observe-session complete --agent "$AGENT" --exit-code "$EXIT_CODE")
+[[ -n "$PROJECT" ]] && ARGS+=(--project "$PROJECT")
+[[ -n "$TASK" ]] && ARGS+=(--task-id "$TASK")
+[[ -n "$LOG_FILE" && -f "$LOG_FILE" ]] && ARGS+=(--log-file "$LOG_FILE")
+
+exec "$CLI" "$SPARK" "${ARGS[@]}"

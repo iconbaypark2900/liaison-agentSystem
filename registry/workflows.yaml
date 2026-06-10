@@ -1,0 +1,37 @@
+version: 1
+workflows:
+  reporter-mode:
+    role: default universal work filesystem path
+    commands:
+      - init
+      - snapshot
+      - attach
+      - approve-artifact
+      - reject-artifact
+      - decision
+      - validate
+      - close-task
+  phase-executor:
+    role: optional legacy executor lane
+    commands:
+      - start
+      - approve
+      - reject
+  python-cli:
+    role: generic Python project lifecycle
+  quantum-ising:
+    role: quantum calibration or decoding workflow
+  data-flywheel:
+    role: continuous agent optimization loop based on production traffic, curated datasets, candidate model experiments, and deterministic/LLM-judge evaluation reports
+    commands:
+      - init
+      - snapshot
+      - attach
+      - score-artifacts
+      - evaluate
+      - approve-artifact
+      - decision
+      - trend-report
+      - dashboard
+      - close-task
+

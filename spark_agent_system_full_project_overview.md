@@ -80,7 +80,7 @@ Runtime workflow state is kept out of the source repo. Directories such as `.spa
 The main source repo is:
 
 ```text
-~/spark/agent-system
+$LIAISON_ROOT
 ```
 
 Recommended structure:
@@ -657,7 +657,7 @@ Outputs:
 Log:
 
 ```text
-~/spark/agent-system/logs/remote_call_log.jsonl
+$LIAISON_ROOT/logs/remote_call_log.jsonl
 ```
 
 Current Phase 8A status:
@@ -999,8 +999,8 @@ Future behavior:
 Logs:
 
 ```text
-~/spark/agent-system/logs/remote_call_log.jsonl
-~/spark/agent-system/logs/ml_intern_runs.jsonl
+$LIAISON_ROOT/logs/remote_call_log.jsonl
+$LIAISON_ROOT/logs/ml_intern_runs.jsonl
 ```
 
 Logs should not be committed.

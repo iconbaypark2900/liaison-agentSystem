@@ -1,0 +1,15 @@
+version: 1
+rubrics:
+  artifact_scoring:
+    max_score: 5
+    deterministic: true
+    criteria:
+      readable_artifact: artifact is Markdown, non-empty, and readable as a report
+      metadata_or_source: artifact records metadata, source, agent, or capture details
+      report_body: artifact contains report or assessment content
+      validation_or_evidence: artifact or task validation links claims to evidence
+      approval_or_decision_linkage: artifact is approved/rejected or referenced by decisions/approvals
+    limits:
+      - structural score only
+      - no LLM quality judgment
+      - semantic review remains a human or reviewer-agent responsibility

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Tail a log file and run observe-session complete when the session ends.
+# Usage: liaison-watch-session --log-file PATH --agent hermes --project KEY --task-id ID
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CLI="${ROOT}/.venv/bin/python"
+SPARK="${ROOT}/bin/spark-flow"
+if [[ ! -x "$CLI" ]]; then
+  CLI="python3"
+fi
+
+exec "$CLI" "$SPARK" observe-session watch "$@"

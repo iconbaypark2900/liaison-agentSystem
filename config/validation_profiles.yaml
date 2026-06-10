@@ -1,5 +1,8 @@
 version: 1
 
+command_center:
+  debrief_stale_days: 7
+
 profiles:
   python:
     script: checks/python.sh
@@ -59,3 +62,12 @@ profiles:
     script: checks/security.sh
     required_files:
       - SECURITY.md
+
+  sigma:
+    script: checks/sigma.sh
+    required_files:
+      - Makefile
+      - apps/api
+
+  data-flywheel:
+    script: checks/data-flywheel.sh

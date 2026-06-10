@@ -1,0 +1,29 @@
+version: 1
+# Workstation capacity — execution bridge uses this for venture queue and spawn hints.
+defaults:
+  max_active_ventures: 3
+  default_engine: hermes
+  log_excerpt_max_chars: 4000
+  executor_session_stale_hours: 4
+
+engines:
+  hermes:
+    max_concurrent: 1
+    requires_gpu: false
+    agents: [hermes]
+  qca:
+    max_concurrent: 1
+    requires_gpu: false
+    agents: [qca]
+  ml_intern:
+    max_concurrent: 1
+    requires_gpu: true
+    agents: [ml_intern]
+  unsloth_studio:
+    max_concurrent: 1
+    requires_gpu: true
+    agents: [unsloth_studio]
+  gpu_heavy:
+    max_concurrent: 1
+    requires_gpu: true
+    agents: []

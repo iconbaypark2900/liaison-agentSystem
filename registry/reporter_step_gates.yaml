@@ -1,0 +1,46 @@
+version: 1
+# Reporter checklist transition gates — see policies/reporter-step-gates.md
+
+steps:
+  - id: init
+    probe: BRIEF.md
+  - id: snapshot
+    probe: CONTEXT.md or context/reporter.manifest.json
+  - id: attach
+    probe: outbox/*.md
+  - id: approve
+    probe: approved/*.md and no pending outbox
+  - id: validate
+    probe: GATE_REPORT.md without FAIL
+  - id: close
+    probe: CLOSEOUT.md or STATE CURRENT_PHASE complete
+
+transitions:
+  - from: init
+    to: snapshot
+    requires_probe: init
+  - from: snapshot
+    to: attach
+    requires_probe: snapshot
+  - from: attach
+    to: approve
+    requires_probe: attach
+  - from: approve
+    to: validate
+    requires_probe: approve
+  - from: validate
+    to: close
+    requires_probe: validate
+    human_confirm: close-task
+
+web_gates:
+  suggested_workflow_commands:
+    requires_intake: ready_to_build_soft or executor_launch_ready
+  suggested_workflow_run:
+    allowlisted_subcommands: [validate, approve-artifact, close-task, start-pattern]
+    audit: memory/browser_liaison_audit.jsonl
+  close_task_copy:
+    requires_completed_step: validate
+  reporter_step_advance:
+    requires_project_flag: reporter_auto_advance
+    never_force: true

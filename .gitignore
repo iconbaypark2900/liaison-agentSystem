@@ -38,3 +38,20 @@ dist/
 tmp/
 *.tmp
 *.bak
+
+# Promoted local learnings are reviewed before commit
+memory/*.learning.md
+!memory/README.md
+
+# Generated cross-repo dashboard artifacts
+/dashboard/*.json
+/dashboard/*.md
+!/dashboard/README.md
+
+# Generated promoted-memory trend artifacts
+/memory/trends.json
+/memory/TREND_REPORT.md
+
+# Command-center snapshots (A.3 digest); keep directory via .gitkeep
+/memory/snapshots/*.json
+!/memory/snapshots/.gitkeep

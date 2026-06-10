@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root,
+.light {
+  --liaison-canvas: #faf8f5;
+  --liaison-surface: #f4f2ee;
+  --liaison-surface-low: #ebe8e3;
+  --liaison-surface-container: #e3e0da;
+  --liaison-surface-high: #dbd7d0;
+  --liaison-primary: #0d6e6e;
+  --liaison-primary-container: #14a3a3;
+  --liaison-teal: #0d9488;
+  --liaison-gold: #b45309;
+  --liaison-on-surface: #1a1c20;
+  --liaison-on-surface-variant: #44474e;
+  --liaison-outline-variant: #c4c6d0;
+  --liaison-error: #ba1a1a;
+  --liaison-warn: #b45309;
+}
+
+.dark {
+  --liaison-canvas: #0b0a08;
+  --liaison-surface: #141210;
+  --liaison-surface-low: #1c1a17;
+  --liaison-surface-container: #221f1c;
+  --liaison-surface-high: #2a2724;
+  --liaison-primary: #2dd4bf;
+  --liaison-primary-container: #14b8a6;
+  --liaison-teal: #2dd4bf;
+  --liaison-gold: #fbbf24;
+  --liaison-on-surface: #f0ede8;
+  --liaison-on-surface-variant: #b5b0a8;
+  --liaison-outline-variant: #3a3733;
+  --liaison-error: #f87171;
+  --liaison-warn: #fbbf24;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+html {
+  color-scheme: dark;
+}
+html.light {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--liaison-surface);
+  color: var(--liaison-on-surface);
+  @apply font-body antialiased;
+}
+
+html.light body {
+  background-color: var(--liaison-canvas);
+}
+
+.panel {
+  @apply rounded-xl border border-liaison-outline-variant bg-liaison-surface-low p-4;
+}
+
+.panel-eyebrow {
+  @apply text-[10px] uppercase tracking-widest text-liaison-on-surface-variant font-bold;
+}
+
+.panel-title {
+  @apply font-headline text-lg font-semibold text-liaison-on-surface mt-1;
+}
+
+.mono {
+  @apply font-mono text-xs;
+}

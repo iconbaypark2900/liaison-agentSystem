@@ -1,0 +1,77 @@
+version: 1
+# Project phases (product evolution) — distinct from liaison task phases below.
+
+project_phases:
+  prototype:
+    order: 1
+    label: Prototype
+    liaison_focus: "Fast init, snapshot, narrow closeout; record what is stubbed."
+    validation: optional
+    debrief_required: false
+    memory_templates:
+      - PROJECT_PHASE.md
+      - CURRENT_STATE_UPDATE.md
+    exit_criteria:
+      - "Happy path runs locally on this Spark"
+      - "Non-goals listed in project brief or current_state"
+      - "No hidden manual steps for the demo path"
+
+  alpha:
+    order: 2
+    label: Alpha
+    liaison_focus: "Validation profile wired; debrief ack after each slice."
+    validation: required
+    debrief_required: true
+    memory_templates:
+      - PROJECT_PHASE.md
+      - DEBRIEF_ACK.md
+      - CURRENT_STATE_UPDATE.md
+    exit_criteria:
+      - "Repo-native validation profile passes"
+      - "Tests cover core path"
+      - "current_state reflects real vs planned architecture"
+
+  beta:
+    order: 3
+    label: Beta
+    liaison_focus: "Gate and drift-check; promote learnings; cross-repo task visibility."
+    validation: required
+    debrief_required: true
+    memory_templates:
+      - PROJECT_PHASE.md
+      - DEBRIEF_ACK.md
+      - CURRENT_STATE_UPDATE.md
+    exit_criteria:
+      - "Regression profile stable"
+      - "Operator docs match behavior"
+      - "Failure modes observable in closeout or logs"
+
+  mvp:
+    order: 4
+    label: MVP
+    liaison_focus: "Audit-ready closeout; deploy path documented; improve loop active."
+    validation: required
+    debrief_required: true
+    memory_templates:
+      - PROJECT_PHASE.md
+      - DEBRIEF_ACK.md
+      - CURRENT_STATE_UPDATE.md
+    exit_criteria:
+      - "Deploy and rollback documented"
+      - "Material changes have approval and closeout records"
+      - "registry/repos.yaml entry accurate"
+
+# Task phases — one vertical slice inside .spark-flow/tasks/<id>/
+task_phases:
+  note: >
+    Task phases (plan/build/patch/review/close) govern execution of a single slice.
+    They do not replace project phases (Prototype/Alpha/Beta/MVP).
+  phases:
+    - plan
+    - build
+    - patch
+    - review
+    - close
+
+default_project_phase: prototype
+recommended_sequence: [prototype, alpha, beta, mvp]

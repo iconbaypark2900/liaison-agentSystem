@@ -1,0 +1,27 @@
+version: 1
+loop:
+  - objective
+  - knowledge
+  - reasoning
+  - action
+  - observation
+  - evaluation
+  - learning
+  - improvement
+  - updated_knowledge
+required_task_files:
+  - OBJECTIVES.md
+  - CONTEXT.md
+  - HANDOFFS.md
+  - OBSERVATIONS.md
+  - EVALUATIONS.md
+  - LEARNINGS.md
+  - IMPROVEMENTS.md
+  - APPROVALS.md
+  - VALIDATION.md
+  - CLOSEOUT.md
+success_conditions:
+  - every approved artifact maps to an objective
+  - every material action has an observation or validation record
+  - failed evaluations create a learning or improvement item
+  - closeout states remaining risks and next actions
