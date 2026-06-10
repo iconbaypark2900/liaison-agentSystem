@@ -1,0 +1,21 @@
+version: 1
+skills:
+  github-pr-workflow:
+    owner: hermes
+    use_for: post-closeout PR and CI tracking
+  kanban-orchestrator:
+    owner: hermes
+    use_for: card lifecycle and multi-agent board coordination
+  systematic-debugging:
+    owner: hermes
+    use_for: bounded failure investigation
+  nvidia-ising-review:
+    owner: agent-system
+    use_for: quantum calibration review context
+  testing-hardening:
+    owner: agent-system
+    use_for: validation and test quality checks
+  synthetic-data-designer:
+    owner: agent-system
+    use_for: schema-first synthetic dataset design, seed expansion, validation planning, and data-flywheel dataset generation reports
+

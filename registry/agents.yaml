@@ -1,0 +1,68 @@
+version: 1
+agents:
+  liaison:
+    role: control plane — task lifecycle, debrief, memory, validation gates
+    output_contract: governance_record
+    status: active
+    launch: liaison command-center
+    handoff_guide: liaison/guides/liaison.md
+    hub_docs: ~/spark/docs/local-agents/liaison
+  hermes:
+    role: default engineer, Kanban coordinator, git/PR/integration owner
+    output_contract: report
+    status: active
+    launch: cd ~/spark && hermes
+    handoff_guide: hermes/guides/workflows/agent-system-integration.md
+    hub_docs: ~/spark/docs/local-agents/hermes
+  qca:
+    role: quantum calibration, Ising, VLM plot review, QCalEval
+    output_contract: specialist_report
+    status: active
+    launch: qca serve
+    handoff_guide: liaison/guides/workflows/specialist-handoffs.md
+    hub_docs: ~/spark/docs/local-agents/qca
+  ml_intern:
+    role: paper-to-code, Hugging Face datasets/models/jobs, research loops
+    output_contract: research_report
+    status: active
+    launch: cd ~/apps/ml-intern && ml-intern
+    handoff_guide: liaison/guides/workflows/specialist-handoffs.md
+    hub_docs: ~/spark/docs/local-agents/ml-intern
+  unsloth_studio:
+    role: fine-tuning, GGUF, Data Designer, export/evaluation handoff
+    output_contract: training_report
+    status: active
+    launch: unsloth studio
+    handoff_guide: unsloth-studio/guides/workflows/export-inference-deployment.md
+    hub_docs: ~/spark/docs/local-agents/unsloth-studio
+  codex:
+    role: surgical patches and implementation assistance (flow patch phase)
+    output_contract: patch_report
+    status: ready
+    launch: spark-flow start patch
+    launch_note: "exceptional — use reporter path (liaison attach hermes) by default; executor lane only when phase-agent ownership required"
+    handoff_guide: liaison/guides/triggering-cli-agents.md
+    hub_docs: ~/spark/docs/local-agents/liaison
+  opencode:
+    role: implementation assistance and closeout drafts (flow build/close)
+    output_contract: implementation_report
+    status: ready
+    launch: spark-flow start build
+    launch_note: "exceptional — use reporter path (liaison attach hermes) by default; executor lane only when phase-agent ownership required"
+    handoff_guide: liaison/guides/triggering-cli-agents.md
+    hub_docs: ~/spark/docs/local-agents/liaison
+  claude:
+    role: planning, architecture, and review assistance (flow plan/review)
+    output_contract: review_report
+    status: ready
+    launch: spark-flow start plan
+    launch_note: "exceptional — use reporter path (liaison attach hermes) by default; executor lane only when phase-agent ownership required"
+    handoff_guide: liaison/guides/triggering-cli-agents.md
+    hub_docs: ~/spark/docs/local-agents/liaison
+  data_flywheel:
+    role: production feedback-loop, traceability, log curation, evaluator scorecards
+    output_contract: flywheel_report
+    status: active
+    launch: liaison init --workflow data-flywheel
+    handoff_guide: policies/data-flywheel-policy.md
+    hub_docs: ~/spark/docs/local-agents/liaison

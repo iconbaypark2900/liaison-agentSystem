@@ -1,0 +1,113 @@
+version: 1
+# Portfolio operating plans — workflow + pattern + gates per registry repo key.
+# Tier C repos (default_profile: none) use runtime fallback in project_plans.py.
+
+project_plans:
+  sigma:
+    intent: Trading platform; incremental tradeFluxsimulator archive migration into Sigma
+    reporter_auto_advance: false
+    maturity_target: alpha
+    workflow: sigma-integration
+    workflow_source: workflows/sigma-integration.yaml
+    pattern: hermes-led-slice
+    validation_profile: sigma
+    external_guide: ~/spark/docs/local-agents/projects/sigma-integration.md
+    research_gate_summary: Archive inspection and scope decisions before module validation; research-first — no L4 merge without operator decisions.
+    research_gate_commands:
+      - liaison assess-project --show
+      - liaison project-intake --project sigma --show
+      - liaison init sigma-tfs-1 "Archive inspect slice" --workflow sigma-integration
+    engineering_gate_summary: Hermes-led slices with sigma validation profile; governed-slice when audit trail required.
+    engineering_gate_commands:
+      - liaison validate --profile sigma
+      - liaison start-pattern hermes-led-slice --task-id sigma-slice-1
+      - liaison start-pattern governed-slice --task-id sigma-governed-1
+    backlog:
+      - Complete archive-inspect phase per workflows/sigma-integration.yaml
+      - Record scope decisions in repo memory decisions.md
+      - Run checks/sigma.sh on first validated module slice
+
+  clinical_suite:
+    intent: Clinical suite product engineering with reporter-mode hygiene
+    reporter_auto_advance: true
+    maturity_target: prototype
+    workflow: reporter-mode
+    workflow_source: registry/workflows.yaml
+    pattern: hermes-led-slice
+    validation_profile: python
+    external_guide: ""
+    research_gate_summary: Intake, brief, and assess-project before Hermes build slices
+    research_gate_commands:
+      - liaison project-intake --project clinical_suite --show
+      - liaison assess-project --show
+    engineering_gate_summary: Python profile validation; specialists via liaison attach
+    engineering_gate_commands:
+      - liaison start-pattern hermes-led-slice --task-id clinical-slice-1
+      - liaison validate --profile python
+    backlog:
+      - Finish project brief and current_state in .spark-flow/memory
+      - Classify maturity after assessment
+
+  adaptive_graph_rag:
+    intent: Adaptive graph RAG — retrieval design then integration
+    maturity_target: prototype
+    workflow: reporter-mode
+    workflow_source: registry/workflows.yaml
+    pattern: hermes-led-slice
+    validation_profile: rag
+    external_guide: ""
+    research_gate_summary: RAG eval design and dataset inspection before build (rag-system skill lane)
+    research_gate_commands:
+      - liaison project-intake --project adaptive_graph_rag --show
+      - liaison assess-project --show
+    engineering_gate_summary: Build with rag-system skills (retrieval-design, rag-eval) per skill_resolution
+    engineering_gate_commands:
+      - liaison start-pattern hermes-led-slice --task-id rag-slice-1
+      - liaison validate --profile rag
+    backlog:
+      - Confirm rag/ eval artifacts exist or scaffold from templates
+      - Run retrieval eval before alpha promotion
+
+  research:
+    intent: ML research repo — literature and benchmarks before calibration handoff
+    maturity_target: prototype
+    workflow: ml-research
+    workflow_source: config/skill_resolution.yaml
+    pattern: research-to-calibration
+    validation_profile: ml-research
+    external_guide: ""
+    research_gate_summary: ml-research workflow plan/research phases (ml-intern, synthetic data, HF experiments)
+    research_gate_commands:
+      - liaison project-intake --project research --show
+      - liaison assess-project --show
+    engineering_gate_summary: QCA review then Hermes integration after research_report in outbox
+    engineering_gate_commands:
+      - liaison start-pattern research-to-calibration --task-id research-slice-1
+      - liaison validate --profile ml-research
+    backlog:
+      - Produce research_report artifact for QCA review
+      - Document experiment.yaml and metrics schema
+
+  materialScience:
+    intent: MQAI materials discovery — scaffold mqai-project pipelines, experiments, and reproducible runs
+    maturity_target: prototype
+    workflow: reporter-mode
+    workflow_source: registry/workflows.yaml
+    pattern: hermes-led-slice
+    validation_profile: python
+    external_guide: ""
+    research_gate_summary: Intake and assess mqai-project layout before GPU/experiment slices; ml_intern for dataset/literature when needed
+    research_gate_commands:
+      - liaison project-intake --project materialScience --show
+      - liaison assess-project --show
+      - liaison init materialScience-intake-001 "Document mqai-project scope, env, and first runnable slice"
+    engineering_gate_summary: Hermes-led slices under mqai-project; attach ml_intern for HF/dataset loops; python validation when root layout supports checks
+    engineering_gate_commands:
+      - liaison start-pattern hermes-led-slice --task-id materialScience-slice-1
+      - liaison validate --profile python
+    backlog:
+      - Complete project_brief.md and current_state.md (MQAI goals, datasets, success metrics)
+      - Align validation with mqai-project/pyproject.toml (root wrapper or checks path)
+      - Define first experiment/run script in mqai-project/runs or scripts/
+      - Run checks/materialScience.sh on first validated module slice
+

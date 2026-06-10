@@ -1,0 +1,58 @@
+# Liaison rolodex — catalog for command center (skills, subagents, commands, tools)
+version: 1
+
+command_groups:
+  lifecycle:
+    label: Task lifecycle
+    commands:
+      - { name: init, usage: "liaison init <task_id> <description>", summary: Create governed task filesystem }
+      - { name: snapshot, usage: "liaison snapshot [--show]", summary: Refresh CONTEXT.md and reporter manifest }
+      - { name: attach, usage: "liaison attach <agent> --file PATH", summary: Store specialist report in outbox }
+      - { name: approve-artifact, usage: "liaison approve-artifact <file>", summary: Promote outbox artifact to approved }
+      - { name: reject-artifact, usage: "liaison reject-artifact <file> <reason>", summary: Reject artifact with reason }
+      - { name: close-task, usage: "liaison close-task [--summary]", summary: Compile CLOSEOUT and mark task complete }
+  debrief:
+    label: Debrief & memory
+    commands:
+      - { name: debrief, usage: "liaison debrief [--show]", summary: Evidence + ranked next options }
+      - { name: recommend, usage: "liaison recommend [--show]", summary: Print latest ranked paths from memory }
+      - { name: choose, usage: "liaison choose <n> [--reason]", summary: Record operator choice in memory }
+      - { name: memory-init, usage: "liaison memory-init [--show]", summary: Initialize .spark-flow/memory }
+      - { name: promote-learning, usage: "liaison promote-learning [--tags]", summary: Promote task learnings to hub memory }
+  observe:
+    label: Feedback loop
+    commands:
+      - { name: objective, usage: "liaison objective <text>", summary: Record OBJECTIVES.md }
+      - { name: observe, usage: "liaison observe <source> --file PATH", summary: Record OBSERVATIONS.md }
+      - { name: evaluate, usage: "liaison evaluate <text> --score N", summary: Record EVALUATIONS.md }
+      - { name: learn, usage: "liaison learn <text>", summary: Append LEARNINGS.md }
+      - { name: gate, usage: "liaison gate [--show]", summary: Deterministic closeout gates }
+      - { name: validate, usage: "liaison validate --profile <name>", summary: Run validation profile checks }
+  hub:
+    label: Hub & browse
+    commands:
+      - { name: command-center, usage: "liaison command-center [--refresh]", summary: Interactive command center TUI }
+      - { name: look, usage: "liaison look [--refresh]", summary: Browse hub state snapshot }
+      - { name: registry, usage: "liaison registry <repos|agents|skills|workflows|phase-routing>", summary: Print registry YAML }
+      - { name: discover-projects, usage: "liaison discover-projects [--show]", summary: Scan repos for project markers }
+      - { name: plan-next, usage: "liaison plan-next [--show]", summary: Generate NEXT_WORK from open tasks }
+      - { name: index-tasks, usage: "liaison index-tasks [--refresh]", summary: Rebuild dashboard task index }
+  phase_executor:
+    label: Phase executor (optional)
+    commands:
+      - { name: start, usage: "liaison start <plan|build|patch|review|close>", summary: Launch Ollama-routed CLI agent for phase }
+      - { name: approve, usage: "liaison approve <phase>", summary: Approve phase outbox → approved }
+      - { name: context, usage: "liaison context <phase> --show", summary: Build phase context bundle }
+
+tools:
+  - { id: git, kind: binary, summary: Repo status, branches, diffs for debrief and closeout }
+  - { id: ollama, kind: binary, summary: Local model routing for phase executor lane }
+  - { id: hermes, kind: hub_cli, launch: "cd ~/spark && hermes", summary: Default engineer and Kanban coordinator }
+  - { id: qca, kind: hub_cli, launch: "qca serve", summary: Quantum calibration and VLM plot review }
+  - { id: ml-intern, kind: hub_cli, launch: "cd ~/apps/ml-intern && ml-intern", summary: HF datasets, training loops, research reports }
+  - { id: unsloth, kind: hub_cli, launch: "unsloth studio", summary: Fine-tune, GGUF export, evaluation handoff }
+  - { id: codex, kind: phase_cli, launch: "liaison start patch", summary: Surgical patch phase }
+  - { id: opencode, kind: phase_cli, launch: "liaison start build", summary: Build and close phases }
+  - { id: claude, kind: phase_cli, launch: "liaison start plan", summary: Plan and review phases }
+  - { id: validation_checks, kind: scripts, path: "checks/", summary: Profile-driven shell validation gates }
+  - { id: cursor_mcp, kind: integration, summary: IDE MCP plugins (encore, cloudflare, supabase, etc.) — use per task }

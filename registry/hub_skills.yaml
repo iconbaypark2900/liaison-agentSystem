@@ -1,0 +1,91 @@
+# Hub skills index — per local-agents member (operator docs + live paths)
+version: 1
+
+hub_members:
+  liaison:
+    label: Liaison
+    doc_root: ~/spark/docs/local-agents/liaison
+    skills_dir: $LIAISON_ROOT/skills
+    registry: registry/skills.yaml
+  hermes:
+    label: Hermes
+    doc_root: ~/spark/docs/local-agents/hermes
+    skills_guides: hermes/guides/skills
+    skills_cli: hermes skills list --enabled-only
+    builtin_note: "~/.hermes/skills/ + Skills Hub install"
+  qca:
+    label: QCA
+    doc_root: ~/spark/docs/local-agents/qca
+    knowledge_skills_dir: ~/spark/apps/Quantum-Calibration-Agent-Blueprint/data/knowledge/skills
+    guide: qca/guides/capabilities/knowledge-skills.md
+  ml_intern:
+    label: ML Intern
+    doc_root: ~/spark/docs/local-agents/ml-intern
+    guide: ml-intern/guides/capabilities/README.md
+    capabilities:
+      - { id: hf-datasets, summary: Search and inspect Hugging Face datasets }
+      - { id: hf-hub-models, summary: Model cards, uploads, Hub operations }
+      - { id: hf-papers, summary: Paper search and literature loops }
+      - { id: sandbox-tools, summary: Remote GPU sandbox execution (--sandbox-tools) }
+      - { id: hf-jobs, summary: HF Jobs planning and smoke tests }
+      - { id: mcp-hub, summary: MCP access to Hub and related services }
+  unsloth_studio:
+    label: Unsloth Studio
+    doc_root: ~/spark/docs/local-agents/unsloth-studio
+    guide: unsloth-studio/guides/capabilities/README.md
+    capabilities:
+      - { id: fine-tuning-ui, summary: LoRA/QLoRA training in browser UI }
+      - { id: gguf-inference, summary: GGUF load, chat, studio run CLI }
+      - { id: data-designer, summary: Dataset curation and synthetic pipelines }
+      - { id: export-handoff, summary: Exports for Hermes deploy / vLLM compose }
+
+# How a registered project uses multiple hub agents (patterns, not architecture)
+project_agent_patterns:
+  - id: hermes-led-slice
+    label: Hermes-led with specialist reports
+    agents: [hermes]
+    specialists: [qca, ml_intern, unsloth_studio]
+    when: Default product engineering; specialists attach via liaison outbox
+    steps:
+      - Hermes implements on branch
+      - "liaison init <task> && liaison attach <specialist> --file report.md"
+      - Hermes integrates after liaison approve-artifact
+  - id: research-to-calibration
+    label: ML Intern → QCA → Hermes
+    agents: [ml_intern, qca, hermes]
+    when: Paper or benchmark code needs VLM plot review then integration
+    steps:
+      - ml-intern produces research_report in outbox
+      - qca reviews plots / QCalEval
+      - hermes merges to main with tests
+  - id: train-and-deploy
+    label: ML Intern → Unsloth → Hermes
+    agents: [ml_intern, unsloth_studio, hermes]
+    when: Dataset discovery, GPU fine-tune, then git/deploy
+    steps:
+      - ml-intern prepares JSONL / dataset card
+      - unsloth studio fine-tune and export
+      - hermes wires vLLM/Ollama and PR
+  - id: governed-slice
+    label: Hermes explore → Liaison govern
+    agents: [hermes, liaison, claude, opencode, codex]
+    when: Vertical slice needs plan/build/review/close audit trail
+    steps:
+      - hermes explores; liaison init when scope is clear
+      - phase executor or reporter attach per phase
+      - liaison close-task with validation profile
+  - id: calibration-only
+    label: QCA advisory loop
+    agents: [qca, hermes]
+    when: Ising / calibration without ML Intern
+    steps:
+      - qca serve experiments or plot analysis
+      - hermes integrates config and API changes
+  - id: flywheel-improve
+    label: Data flywheel + Hermes
+    agents: [data_flywheel, hermes, liaison]
+    when: Production traffic → curated datasets → eval promotion
+    steps:
+      - "liaison init --workflow data-flywheel"
+      - observe/curate/evaluate artifacts
+      - hermes ships routing or model changes after approval

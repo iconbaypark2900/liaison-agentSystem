@@ -1,0 +1,25 @@
+# Example reverse proxy for same-host production (Next.js on :3000).
+# Install: copy to /etc/nginx/sites-available/liaison-dashboard, symlink sites-enabled, nginx -t && reload.
+#
+# TLS certificates and auth are operator-specific; this snippet is HTTP-only.
+
+upstream liaison_dashboard {
+    server 127.0.0.1:3000;
+    keepalive 8;
+}
+
+server {
+    listen 80;
+    server_name liaison.local;  # replace with your hostname
+
+    location / {
+        proxy_pass http://liaison_dashboard;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}

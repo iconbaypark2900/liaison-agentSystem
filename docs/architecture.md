@@ -1,44 +1,115 @@
-# Architecture — Spark Agent System
+# Architecture — Liaison
 
-High-level map of the Spark agent control plane: what ships in git, what stays on disk at runtime, and how work moves through local vs governed remote/research paths.
+Liaison is the durable work filesystem and governance layer — intermediary
+between hub agents and registered projects.
 
 ## Control plane vs runtime
 
 | Layer | Location | Role |
-|--------|-----------|------|
-| **Control plane (committed)** | `bin/`, `config/`, `policies/`, `checks/`, `workflows/`, `skills/`, `templates/`, `departments/`, `examples/`, `docs/` | Registries, scripts, policies, and docs that define *how* agents are routed, approved, and validated. |
-| **Runtime (not committed)** | `.spark-flow/`, `logs/` | Per-task state (`STATE.txt`, `outbox/`, `approved/`, `remote/`, `research/`, `context/`), append-only JSONL such as `logs/remote_call_log.jsonl` and `logs/ml_intern_runs.jsonl`, and task-level `events.jsonl` under `.spark-flow/tasks/<id>/`. |
+|-------|----------|------|
+| Control plane | `bin/`, `registry/`, `evaluations/`, `config/`, `policies/`, `checks/`, `workflows/`, `skills/`, `templates/`, `departments/`, `docs/` | Defines commands, catalogs, policies, validation, templates, and optional routes. |
+| Runtime | `<repo>/.spark-flow/`, `logs/` | Per-task briefs, context, reports, approvals, rejections, decisions, handoffs, validation, closeout, and event logs. |
 
-Optional ad-hoc runnable demos may live under **`flow-demos/`** (create locally as needed); packaged reference code lives under **`examples/`** (for example `examples/spark-flow-demo/`).
+## Reporter-first task filesystem
 
-The root **`README.md`** restates the runtime rule: do not commit `.spark-flow/`, `logs/`, secrets, or ephemeral outputs.
+Each task lives under `<repo>/.spark-flow/tasks/<task-id>/` and includes:
 
-## Main directories
+- `BRIEF.md`
+- `CONTEXT.md`
+- `APPROVALS.md`
+- `DECISIONS.md`
+- `HANDOFFS.md`
+- `VALIDATION.md`
+- `CLOSEOUT.md`
+- `outbox/`, `approved/`, `rejected/`, `attachments/`
 
-- **`bin/spark-flow`** — Python CLI conductor: task lifecycle (`init`, `start`, `approve`, `reject`), registry inspection, context bundles, validation profiles, remote/research governance stubs, and logging hooks. See [`command_reference.md`](command_reference.md).
+## Registries
 
-- **`config/`** — YAML registries read by the CLI, including `model_routes.yaml`, `capability_routes.yaml`, `skill_resolution.yaml`, `research_workers.yaml`, `validation_profiles.yaml`, `budget_limits.yaml`, and `provider_registry.yaml`.
+`registry/` gives the filesystem a catalog:
 
-- **`policies/`** — Human-readable governance Markdown consumed when building context bundles (see `context` in `bin/spark-flow`).
-
-- **`checks/`** — Shell validation scripts invoked by `spark-flow validate --profile <name>` (e.g. `python.sh`, `security.sh`); profiles map from `config/validation_profiles.yaml`.
-
-- **`workflows/`** — Workflow YAML (e.g. `python-cli.yaml`, `quantum-ising.yaml`) listed by `spark-flow workflows`.
-
-- **`skills/`** — Skill descriptions (Markdown) referenced from resolution config and global skill paths.
-
-- **`examples/`** — Sanitized demo projects; not the live control-plane state (`examples/README.md`).
-
-- **`templates/`** — Reusable task or handoff templates (`templates/README.md`).
-
-- **`departments/`** — Role/department definitions for agents (`departments/README.md`).
+- `repos.yaml`
+- `agents.yaml`
+- `skills.yaml`
+- `workflows.yaml`
+- `artifact_contracts.yaml`
+- `phase_routing.yaml` — project phases (Prototype/Alpha/Beta/MVP) vs task phases
 
 ## Execution lanes
 
-1. **Local** — Default lane: coding, patching, review, and running `checks/*.sh` profiles. Model routing is driven by `config/model_routes.yaml` and optional `spark-flow route "<query>"`.
+1. Reporter mode: agents do work elsewhere; `spark-flow` stores reports,
+   approvals, decisions, and closeout.
+2. Phase executor mode: `spark-flow start <phase>` launches the routed local CLI
+   agent for plan/build/patch/review/close.
+3. Remote/research governance: request, approve, run stub/dry-run, and log.
 
-2. **Remote (governed)** — Flow described in `PROJECT_SPEC.md`: `request-remote` → `approve-remote` → `remote-run` with either **`--stub`** (artifact-only) or **`--real --dry-run`** for NIM payload preview (no network call in-repo). Budget and call history surface via `spark-flow budget` and `logs/remote_call_log.jsonl`.
 
-3. **Research worker (stub)** — `request-research` → `approve-research` → `research-run --stub`; records go to `logs/ml_intern_runs.jsonl` when the stub runs.
+## Closed feedback loop
 
-For phase history and rollback tags, see [`phases/phase_index.md`](phases/phase_index.md).
+The loop is explicit and file-backed:
+
+| Step | Artifact | Command |
+|------|----------|---------|
+| Objective | `OBJECTIVES.md` | `spark-flow objective` |
+| Knowledge/context | `CONTEXT.md` | `spark-flow snapshot` |
+| Reasoning/handoff | `HANDOFFS.md` | `spark-flow attach` / handoff notes |
+| Action/report | `outbox/` | `spark-flow attach` |
+| Observation | `OBSERVATIONS.md` | `spark-flow observe` |
+| Evaluation | `EVALUATIONS.md` | `spark-flow evaluate` |
+| Learning | `LEARNINGS.md` | `spark-flow learn` |
+| Improvement | `IMPROVEMENTS.md` | `spark-flow improve` |
+| Updated knowledge | `FEEDBACK_LOOP.md` | `spark-flow feedback-cycle` |
+
+`evaluations/closed-feedback-loop.yaml` defines required files and success conditions.
+
+
+## Antifragile gates
+
+`gate` makes the feedback loop enforceable. It fails when objective, context,
+observation, evaluation, artifact decision, learning/improvement, or feedback
+cycle records are missing. `drift-check` detects obvious mismatch patterns such
+as approved artifacts without decisions. `promote-learning` moves durable lessons
+from per-repo task memory into `$LIAISON_ROOT/memory/`.
+
+
+## Project context bootstrap
+
+The recommendation layer is deliberately evidence-backed:
+
+```text
+Terminal UI / control panel
+  -> project context loader
+  -> repo memory store
+  -> debrief and planner
+  -> recommended next actions
+```
+
+Per-repo memory lives under `<repo>/.spark-flow/memory/` and starts with `project_brief.md`, `current_state.md`, `decisions.md`, `tasks/backlog.yaml`, `debriefs/`, and `memory.sqlite`. `debrief` loads those files plus README/package metadata/docs, git status/log, and detected project commands. `control-panel` and `recommend` only rank options from this evidence layer, so advice is tied to memory, repo files, or command output instead of chat history.
+
+## Scoring, trends, and dashboard
+
+`score-artifacts` adds deterministic 0-5 structure scores to each task via `SCORES.md` and `scores.json`. `trend-report` aggregates reviewed promoted learnings from `memory/*.learning.md` into recurring tags, phrases, owners, and source repos. `index-tasks` and `dashboard` create Markdown and JSON summaries under `dashboard/` so cross-repo state remains local-first and reviewable.
+
+
+## Data flywheel agent
+
+The `data_flywheel` agent profile adapts NVIDIA's enterprise data-flywheel pattern to Spark Flow's file-backed control plane: production traffic is captured as governed observations, curated into reviewable datasets, compared through candidate-model scorecards, and promoted only through approval and decision artifacts. Spark keeps the orchestration local-first; external NIM, NeMo, evaluator, or fine-tuning services remain optional governed integrations rather than default runtime dependencies. The Iguazio orchestration blueprint adds the scheduling/control-plane view: Spark records job manifests, data partitions, service dependencies, API touchpoints, retries, and rollback conditions before any continuous optimization is automated.
+
+
+The W&B traceability blueprint adds the observability view: each flywheel recommendation should be explainable through traces of agent steps, tool calls, model calls, retrieved context, evaluator runs, latency, cost, and safety findings. Spark represents this as `TRACEABILITY_REPORT.md` and links it to evaluations, scores, approvals, and decisions.
+
+
+## Synthetic data designer skill
+
+`synthetic-data-designer` adapts the NeMo Data Designer pattern into a Spark skill. It designs schema-first synthetic datasets from scratch, seeds, logs, traces, or documents, records sampler and field-dependency plans, requires preview/validation before scale, and links approved datasets into evaluation, fine-tuning, RAG, or data-flywheel workflows.
+
+
+## Project discovery and next-work planning
+
+`discover-projects` scans registered repos for project markers such as `package.json`, `pyproject.toml`, `Makefile`, `Cargo.toml`, and `go.mod`, then infers setup, build, test, lint, typecheck, and validation commands. `plan-next` combines that discovery with open Spark Flow tasks and git status to generate a local next-work backlog without requiring the operator to pick a task first.
+
+## See also
+
+- [Integrated operator model](integrated-operator-model.md) — web, TUI, and terminal surfaces; hub groups; six-step choreography; trigger matrix
+- [Operator quick reference](operator-quick-reference.md) — one-page tmux layout and copy commands
+- [Operator upgrades roadmap](operator-upgrades-roadmap.md) — prioritized UI/UX items A–H
+- [Dashboard README](../dashboard/README.md) — Next.js command center setup

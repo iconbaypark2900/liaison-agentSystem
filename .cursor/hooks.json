@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      {
+        "command": ".cursor/hooks/liaison-session-nudge.sh session-end"
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": ".cursor/hooks/liaison-session-nudge.sh session-end"
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "command": ".cursor/hooks/liaison-session-nudge.sh after-shell",
+        "matcher": "hermes|qca|ml_intern"
+      }
+    ]
+  }
+}

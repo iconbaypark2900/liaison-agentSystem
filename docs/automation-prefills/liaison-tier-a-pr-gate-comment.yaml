@@ -1,0 +1,37 @@
+# Cursor Automation prefill — Tier A PR engineering-gate comment (A.5)
+# Import via Cursor → Automations. Configure Git trigger scoped to your org/repos.
+# Workspace must include liaison_agentSystem (registry/project_plans.yaml).
+
+name: "Liaison Tier A PR gate commands"
+description: "On PR open, post copy-paste engineering gate commands from project_plans.yaml"
+workflow:
+  triggers:
+    - git:
+        pullRequest:
+          opened: {}
+        # In the Automations UI: scope repos to sigma, clinical_suite, adaptive_graph_rag, research, materialScience
+  actions:
+    - prComment: {}
+  prompts:
+    - prompt: |
+        On pull request open, read registry/project_plans.yaml in this liaison_agentSystem workspace.
+        Match the PR repository to a project_plans key: sigma, clinical_suite, adaptive_graph_rag, research, materialScience.
+
+        Post a single PR comment (copy-only; do not run shell commands) titled
+        "Liaison engineering gate (copy-paste)" containing:
+
+        - project key and intent from YAML
+        - engineering_gate_summary
+        - engineering_gate_commands as a fenced bash block
+        - research_gate_commands as a second fenced block if the PR is draft or labeled research
+
+        If no matching project_plans key, do not comment.
+
+        Footer: "Executor path requires liaison observe-session complete after pane work; hooks do not replace governance."
+  model: ""
+  gitConfig:
+    repo: ""
+    branch: ""
+  agentOptions:
+    skipInstall: false
+  memoryEnabled: true

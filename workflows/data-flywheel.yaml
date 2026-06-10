@@ -1,0 +1,85 @@
+name: data-flywheel
+description: Continuous optimization workflow for AI agents using production traffic, curated datasets, candidate model experiments, and evaluator scorecards.
+owner: data_flywheel
+
+principles:
+  - production traffic becomes reviewable datasets, not ungoverned training input
+  - candidate model changes require empirical scorecards before routing changes
+  - smaller or cheaper models can be promoted only when quality thresholds are met
+  - real remote execution remains approval-gated by Spark Flow policy
+  - MLRun-style orchestration is represented as file-backed job manifests, schedules, and run records
+  - W&B Weave-style traceability is represented as trace reports, evaluation run links, and monitoring summaries
+  - NeMo Data Designer-style synthetic data work is represented as schema-first designs, samplers, field dependencies, preview batches, and validation reports
+
+phases:
+  observe:
+    objective: Capture traffic/log windows and normalize them into reviewable examples.
+    artifacts:
+      - TRAFFIC_WINDOW.md
+      - DATASET_CURATION.md
+    commands:
+      - spark-flow snapshot --show
+      - spark-flow observe logs --file <curation-report.md>
+  curate:
+    objective: Define filters, redaction, sampling, and dataset splits for evaluation, ICL, or fine-tuning.
+    artifacts:
+      - DATASET_CARD.md
+      - SYNTHETIC_DATA_DESIGN.md
+      - REDACTION_NOTES.md
+  orchestrate:
+    objective: Define the low-code orchestration plan for data collection, partitioning, tuning, evaluation, and promotion jobs.
+    artifacts:
+      - ORCHESTRATION_PLAN.md
+      - JOB_MANIFEST.md
+      - RUN_HISTORY.md
+    commands:
+      - spark-flow attach data_flywheel --file ORCHESTRATION_PLAN.md --title "Flywheel orchestration plan"
+
+  experiment:
+    objective: Compare baseline, smaller, fine-tuned, and prompt/ICL variants.
+    artifacts:
+      - EXPERIMENT_PLAN.md
+      - CANDIDATE_MODELS.md
+  trace:
+    objective: Capture agent execution traces, model/tool calls, retrieved context, evaluator runs, and monitoring metrics for debugging and promotion evidence.
+    artifacts:
+      - TRACEABILITY_REPORT.md
+      - TRACE_INDEX.md
+      - MONITORING_SUMMARY.md
+    commands:
+      - spark-flow attach data_flywheel --file TRACEABILITY_REPORT.md --title "Flywheel traceability report"
+
+  evaluate:
+    objective: Score latency, cost, accuracy, tool-calling, safety, and regression risk.
+    artifacts:
+      - EVALUATOR_SCORECARD.md
+      - SCORES.md
+    commands:
+      - spark-flow score-artifacts --show --fail-under 3
+      - spark-flow evaluate "Flywheel candidate meets threshold" --rubric data_flywheel --score <0-5>
+  recommend:
+    objective: Produce a routing or deployment recommendation for human approval.
+    artifacts:
+      - ROUTING_RECOMMENDATION.md
+      - APPROVALS.md
+    commands:
+      - spark-flow approve-artifact <scorecard.md> --note "Approved flywheel recommendation"
+      - spark-flow decision "Promote candidate model or keep baseline"
+  learn:
+    objective: Feed recurring weaknesses into promoted memory and trend reports.
+    artifacts:
+      - LEARNINGS.md
+      - IMPROVEMENTS.md
+      - TREND_REPORT.md
+    commands:
+      - spark-flow trend-report --show
+      - spark-flow dashboard --show
+
+quality_gates:
+  required:
+    - traffic window has source, timeframe, and privacy/redaction notes
+    - orchestration plan names data partitions, scheduled jobs, service dependencies, and failure handling
+    - traceability report links agent steps, tool/model calls, evaluator runs, and monitoring metrics
+    - candidate scorecard compares against current baseline
+    - routing recommendation names rollback criteria
+    - human approval exists before deployment or route changes

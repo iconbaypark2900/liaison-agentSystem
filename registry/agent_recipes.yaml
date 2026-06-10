@@ -1,0 +1,4 @@
+version: 1
+# Index of exported agent recipes (markdown bodies under registry/recipes/).
+# Export: liaison export-agent-recipe --from-project <key> --write
+recipes: []

@@ -1,0 +1,14 @@
+version: 1
+evaluation_rubrics:
+  alignment:
+    purpose: Check whether outputs support the approved objective and constraints.
+    pass_score: 3
+  validation:
+    purpose: Check whether claims are supported by tests, commands, or reproducible artifacts.
+    pass_score: 3
+  handoff_quality:
+    purpose: Check whether another agent can continue without missing context.
+    pass_score: 4
+  antifragility:
+    purpose: Check whether failures produced learning and concrete improvements.
+    pass_score: 3

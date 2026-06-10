@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Liaison command center — prefers project venv when Textual is installed there.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -x "${ROOT}/.venv/bin/python" ]]; then
+  exec "${ROOT}/.venv/bin/python" "${ROOT}/bin/spark-flow" command-center "$@"
+fi
+exec "${ROOT}/bin/liaison" command-center "$@"

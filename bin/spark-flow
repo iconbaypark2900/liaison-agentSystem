@@ -7,9 +7,29 @@ import shutil
 import subprocess
 import sys
 import json
+import re
+import sqlite3
+import time
+from collections import Counter
 from pathlib import Path
 from textwrap import dedent
 from datetime import datetime
+
+LIAISON_VERSION = "v0.2.0"
+_LIAISON_START = time.time()
+COMMAND_CENTER_REFRESH_SEC = 30
+CLI_NAME = "liaison"
+
+_SPARK_BIN = Path(__file__).resolve().parent
+_LIAISON_PKG = _SPARK_BIN.parent
+if str(_LIAISON_PKG) not in sys.path:
+    sys.path.insert(0, str(_LIAISON_PKG))
+from liaison_paths import AGENT_SYSTEM_DIR, resolve_liaison_root  # noqa: E402
+
+CONFIG_DIR = AGENT_SYSTEM_DIR / "config"
+WORKFLOWS_DIR = AGENT_SYSTEM_DIR / "workflows"
+CHECKS_DIR = AGENT_SYSTEM_DIR / "checks"
+LOGS_DIR = AGENT_SYSTEM_DIR / "logs"
 
 FLOW_DIR = Path(".spark-flow")
 TASKS_DIR = FLOW_DIR / "tasks"
@@ -82,7 +102,7 @@ def ensure_dirs() -> None:
 
 def current_task_id() -> str:
     if not CURRENT_FILE.exists():
-        die('No current task. Run: spark-flow init <task-id> "description"')
+        die(f'No current task. Run: {CLI_NAME} init <task-id> "description"')
     return CURRENT_FILE.read_text().strip()
 
 
@@ -133,8 +153,8 @@ def safe_task_path(*parts) -> Path:
 
 
 def resolve_skills_for(workflow_name: str, phase: str) -> list[str]:
-    """Reads ~/spark/agent-system/config/skill_resolution.yaml and returns only skills for the requested workflow + phase"""
-    config_path = Path.home() / "spark/agent-system/config/skill_resolution.yaml"
+    """Reads skill_resolution.yaml and returns skills for the requested workflow + phase."""
+    config_path = AGENT_SYSTEM_DIR / "config" / "skill_resolution.yaml"
     
     if not config_path.exists():
         die(f"Missing skill resolution config: {config_path}")
@@ -230,7 +250,7 @@ def git_status() -> str:
 
 def write_task_files(task_id: str, description: str) -> None:
     td = task_dir(task_id)
-    for sub in ["prompts", "outbox", "approved", "feedback", "handoff", "logs"]:
+    for sub in ["prompts", "outbox", "approved", "rejected", "feedback", "handoff", "attachments", "logs"]:
         (td / sub).mkdir(parents=True, exist_ok=True)
 
     (td / "TASK.md").write_text(dedent(f"""\
@@ -292,19 +312,3242 @@ def write_task_files(task_id: str, description: str) -> None:
         """))
 
 
-def init(args: argparse.Namespace) -> None:
+def slugify(value: str) -> str:
+    cleaned = []
+    for ch in value.lower():
+        if ch.isalnum() or ch in {"-", "_", "."}:
+            cleaned.append(ch)
+        elif ch.isspace() or ch in {"/", "\\", ":"}:
+            cleaned.append("-")
+    slug = "".join(cleaned).strip("-._")
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug or "artifact"
+
+
+def timestamp_slug() -> str:
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def append_markdown(path: Path, text: str) -> None:
+    existing = path.read_text() if path.exists() else ""
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    path.write_text(existing + text)
+
+
+def current_branch() -> str:
+    try:
+        return capture(["git", "branch", "--show-current"]) or "detached-or-unknown"
+    except Exception:
+        return "not-a-git-repo"
+
+
+def write_reporter_files(task_id: str, description: str) -> None:
+    td = task_dir(task_id)
+    repo_path = Path.cwd()
+    created = now()
+
+    reporter_files = {
+        "BRIEF.md": dedent(f"""\
+            # BRIEF: {task_id}
+
+            ## Goal
+
+            {description}
+
+            ## Repo
+
+            `{repo_path}`
+
+            ## Branch
+
+            `{current_branch()}`
+
+            ## Owner model
+
+            Agents do the work. agent-system preserves context, records reports, asks for approval, and prevents handoff loss.
+
+            ## Created
+
+            {created}
+            """),
+        "CONTEXT.md": dedent(f"""\
+            # CONTEXT: {task_id}
+
+            Context has not been snapshotted yet.
+
+            Run:
+
+            ```bash
+            spark-flow snapshot --show
+            ```
+            """),
+        "APPROVALS.md": dedent(f"""\
+            # APPROVALS: {task_id}
+
+            Approved artifacts and constraints are recorded here.
+            """),
+        "DECISIONS.md": dedent(f"""\
+            # DECISIONS: {task_id}
+
+            Durable human/operator decisions are appended here.
+            """),
+        "HANDOFFS.md": dedent(f"""\
+            # HANDOFFS: {task_id}
+
+            Agent-to-agent and specialist handoffs are recorded here.
+            """),
+        "VALIDATION.md": dedent(f"""\
+            # VALIDATION: {task_id}
+
+            Validation commands and summaries are recorded here. `spark-flow validate` also writes test summaries to `outbox/`.
+            """),
+        "CLOSEOUT.md": dedent(f"""\
+            # CLOSEOUT: {task_id}
+
+            This task has not been closed yet.
+
+            Run:
+
+            ```bash
+            spark-flow close-task
+            ```
+            """),
+        "OBJECTIVES.md": dedent(f"""\
+            # OBJECTIVES: {task_id}
+
+            ## Primary objective
+
+            {description}
+
+            ## Alignment rule
+
+            Work is successful only when approved artifacts and validations support this objective without violating project policies.
+            """),
+        "OBSERVATIONS.md": dedent(f"""\
+            # OBSERVATIONS: {task_id}
+
+            Observations from agents, tools, tests, users, and repo state are appended here.
+            """),
+        "EVALUATIONS.md": dedent(f"""\
+            # EVALUATIONS: {task_id}
+
+            Evaluation results, scores, rubrics, and alignment checks are appended here.
+            """),
+        "LEARNINGS.md": dedent(f"""\
+            # LEARNINGS: {task_id}
+
+            Durable lessons extracted from observations and evaluations are appended here.
+            """),
+        "IMPROVEMENTS.md": dedent(f"""\
+            # IMPROVEMENTS: {task_id}
+
+            Follow-up actions that make the system stronger are appended here.
+            """),
+        "FEEDBACK_LOOP.md": dedent(f"""\
+            # FEEDBACK LOOP: {task_id}
+
+            Run:
+
+            ```bash
+            spark-flow feedback-cycle --show
+            ```
+            """),
+    }
+
+    for filename, body in reporter_files.items():
+        target = td / filename
+        if not target.exists():
+            target.write_text(body)
+
+
+def repo_snapshot() -> str:
+    repo = Path.cwd()
+    readme = next((p for p in [repo / "README.md", repo / "readme.md"] if p.exists()), None)
+    readme_excerpt = "No README found."
+    if readme:
+        lines = readme.read_text(errors="replace").splitlines()[:80]
+        readme_excerpt = "\n".join(lines)
+
+    metadata_names = [
+        "package.json", "pyproject.toml", "requirements.txt", "Makefile", "pytest.ini",
+        "tox.ini", "docker-compose.yml", "Cargo.toml", "go.mod",
+    ]
+    metadata = []
+    for name in metadata_names:
+        matches = sorted(repo.glob(f"**/{name}"))
+        for match in matches[:12]:
+            if ".git" not in match.parts and ".spark-flow" not in match.parts and "node_modules" not in match.parts:
+                metadata.append(str(match.relative_to(repo)))
+
+    try:
+        branch = current_branch()
+        status = git_status() or "clean"
+    except Exception:
+        branch = "not-a-git-repo"
+        status = "not available"
+
+    return dedent(f"""\
+        # CONTEXT: {current_task_id()}
+
+        ## Snapshot
+
+        - Captured: {now()}
+        - Repo: `{repo}`
+        - Branch: `{branch}`
+
+        ## Git status
+
+        ```text
+        {status}
+        ```
+
+        ## Project metadata files
+
+        {chr(10).join(f"- `{item}`" for item in metadata) if metadata else "No common metadata files found."}
+
+        ## README excerpt
+
+        ```markdown
+        {readme_excerpt}
+        ```
+
+        ## Source of truth
+
+        This file is the durable context snapshot for the current task. Chat history is not the source of truth.
+        """)
+
+
+def snapshot_cmd(args: argparse.Namespace) -> None:
+    tid = current_task_id()
+    td = task_dir(tid)
+    content = repo_snapshot()
+    context_file = td / "CONTEXT.md"
+    context_file.write_text(content)
+    manifest = {
+        "task_id": tid,
+        "captured_at": now(),
+        "repo": str(Path.cwd()),
+        "branch": current_branch(),
+        "context_file": str(context_file),
+    }
+    (td / "context" ).mkdir(exist_ok=True)
+    (td / "context" / "reporter.manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    append_event("snapshot", command="snapshot", details=manifest)
+    print(f"Snapshot written to: {context_file}")
+    if args.show:
+        print()
+        print(content)
+
+
+def resolve_outbox_artifact(value: str) -> Path:
+    outbox_dir = (task_dir() / "outbox").resolve()
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        if candidate.exists():
+            candidate = candidate.resolve()
+        else:
+            candidate = (outbox_dir / value).resolve()
+    else:
+        candidate = candidate.resolve()
+
+    if not candidate.exists() or not candidate.is_file():
+        die(f"Artifact not found: {value}")
+    if not candidate.is_relative_to(outbox_dir):
+        die(f"Artifact must be under current task outbox: {outbox_dir}")
+    return candidate
+
+
+def attach_cmd(args: argparse.Namespace) -> None:
+    if bool(args.file) == bool(args.text):
+        die("Provide exactly one of --file or --text")
+
+    tid = current_task_id()
+    td = task_dir(tid)
+    agent = slugify(args.agent)
+    title = args.title or f"{args.agent} report"
+    artifact_name = f"{timestamp_slug()}-{agent}-{slugify(title)}.md"
+    artifact = td / "outbox" / artifact_name
+
+    if args.file:
+        source = Path(args.file)
+        if not source.exists() or not source.is_file():
+            die(f"Attachment source not found: {source}")
+        body = source.read_text(errors="replace")
+        source_note = f"file: `{source}`"
+        attachments_dir = td / "attachments"
+        attachments_dir.mkdir(exist_ok=True)
+        shutil.copyfile(source, attachments_dir / f"{timestamp_slug()}-{slugify(source.name)}")
+    else:
+        body = args.text
+        source_note = "inline text"
+
+    artifact.write_text(dedent(f"""\
+        # {title}
+
+        ## Metadata
+
+        - Task: `{tid}`
+        - Agent/source: `{args.agent}`
+        - Captured: {now()}
+        - Source: {source_note}
+
+        ## Report
+
+        {body}
+        """))
+    append_markdown(td / "HANDOFFS.md", f"\n## Attached: {artifact.name}\n\n- Agent/source: `{args.agent}`\n- Title: {title}\n- Captured: {now()}\n- Outbox: `{artifact}`\n")
+    append_event("attach", command="attach", details={"agent": args.agent, "artifact": str(artifact)})
+    print(f"Attached report: {artifact}")
+
+
+def approve_artifact_cmd(args: argparse.Namespace) -> None:
+    source = resolve_outbox_artifact(args.artifact)
+    td = task_dir()
+    approved = td / "approved" / source.name
+    shutil.copyfile(source, approved)
+    note = args.note or "Approved for promotion/use."
+    append_markdown(td / "APPROVALS.md", f"\n## Approved: {source.name}\n\n- Approved at: {now()}\n- Source: `{source}`\n- Approved copy: `{approved}`\n- Note: {note}\n")
+    append_event("approve-artifact", command="approve-artifact", details={"source": str(source), "approved": str(approved)})
+    print(f"Approved artifact: {approved}")
+
+
+def reject_artifact_cmd(args: argparse.Namespace) -> None:
+    source = resolve_outbox_artifact(args.artifact)
+    td = task_dir()
+    rejected = td / "rejected" / source.name
+    shutil.copyfile(source, rejected)
+    append_markdown(td / "APPROVALS.md", f"\n## Rejected: {source.name}\n\n- Rejected at: {now()}\n- Source: `{source}`\n- Rejected copy: `{rejected}`\n- Reason: {args.reason}\n")
+    append_event("reject-artifact", command="reject-artifact", details={"source": str(source), "rejected": str(rejected), "reason": args.reason})
+    print(f"Rejected artifact: {rejected}")
+
+
+def decision_cmd(args: argparse.Namespace) -> None:
+    td = task_dir()
+    append_markdown(td / "DECISIONS.md", f"\n## Decision: {now()}\n\n{args.text}\n")
+    append_event("decision", command="decision", details={"text": args.text})
+    print(f"Decision recorded in: {td / 'DECISIONS.md'}")
+
+
+def close_task_cmd(args: argparse.Namespace) -> None:
+    tid = current_task_id()
+    td = task_dir(tid)
+    state = read_state(tid)
+
+    phase = get_project_phase()
+    lifecycle = get_lifecycle_status()
+    routing = parse_phase_routing()
+    meta = routing["phases"].get(phase, {})
+    validation_required = meta.get("validation", "optional") == "required"
+    debrief_required = str(meta.get("debrief_required", "false")).lower() == "true"
+    require_gate = getattr(args, "require_gate", False) or validation_required
+    enforcement: list[str] = []
+
+    if phase == UNASSESSED_PHASE or lifecycle != LIFECYCLE_CLASSIFIED:
+        print(f"WARNING: project is not classified (lifecycle={lifecycle}, phase={phase}). "
+              f"Maturity enforcement is inactive. Run `{CLI_NAME} assess-project` then "
+              f"`{CLI_NAME} project-phase classify` to enable phase gates.")
+
+    if require_gate:
+        checks = gate_checks(include_production=(phase == "mvp"))
+        _, failed = write_gate_report(checks)
+        if failed:
+            die(f"close-task blocked: project phase '{phase}' requires a passing gate, but it failed "
+                f"({', '.join(failed)}). Inspect with `{CLI_NAME} gate --show` and resolve before closing.")
+        if not has_passing_validation(td):
+            die(f"close-task blocked: project phase '{phase}' requires a passing validation. "
+                f"Run `{CLI_NAME} validate` (or `{CLI_NAME} validate --profile <name>`).")
+        enforcement.append(f"gate passed for phase '{phase}'" + (" (incl. production readiness)" if phase == "mvp" else ""))
+
+    if debrief_required:
+        debrief_dir = repo_memory_dir() / "debriefs"
+        debriefs = sorted(debrief_dir.glob("*.md")) if debrief_dir.exists() else []
+        if not debriefs:
+            die(f"close-task blocked: project phase '{phase}' requires a debrief. Run `{CLI_NAME} debrief --show`.")
+        enforcement.append("debrief present")
+
+    approved = sorted((td / "approved").glob("*.md"))
+    rejected = sorted((td / "rejected").glob("*.md"))
+    validations = sorted((td / "outbox").glob("test.*.md"))
+    summary = args.summary or "No operator summary provided."
+    success_conditions = load_feedback_success_conditions()
+    content = dedent(f"""\
+        # CLOSEOUT: {tid}
+
+        ## Summary
+
+        {summary}
+
+        ## Task
+
+        {state.get('DESCRIPTION', '')}
+
+        ## Repo
+
+        `{Path.cwd()}`
+
+        ## Branch
+
+        `{current_branch()}`
+
+        ## Git status
+
+        ```text
+        {git_status() or 'clean'}
+        ```
+
+        ## Approved artifacts
+
+        {chr(10).join(f"- `{p}`" for p in approved) if approved else "No approved artifacts recorded."}
+
+        ## Rejected artifacts
+
+        {chr(10).join(f"- `{p}`" for p in rejected) if rejected else "No rejected artifacts recorded."}
+
+        ## Validation summaries
+
+        {chr(10).join(f"- `{p}`" for p in validations) if validations else "No validation summaries recorded."}
+
+        ## Decisions
+
+        See `{td / 'DECISIONS.md'}`.
+
+        ## Project phase
+
+        - Lifecycle status: {lifecycle}
+        - Maturity phase: {meta.get('label', phase) if phase != UNASSESSED_PHASE else 'Unassessed'} (`{phase}`)
+
+        ## Phase enforcement
+
+        {chr(10).join(f"- {item}" for item in enforcement) if enforcement else "- Unclassified/optional phase: gate and validation not enforced."}
+
+        ## Closed-feedback success conditions
+
+        {chr(10).join(f"- {condition}" for condition in success_conditions) if success_conditions else "- Not defined."}
+
+        ## Closed at
+
+        {now()}
+        """)
+    (td / "CLOSEOUT.md").write_text(content)
+    state["CURRENT_PHASE"] = "complete"
+    state["UPDATED_AT"] = now()
+    write_state(state, tid)
+    append_event("close-task", command="close-task", details={"closeout": str(td / "CLOSEOUT.md"), "phase": phase, "enforcement": enforcement})
+    update_memory_after_close(tid, summary)
+    print(f"Closeout written to: {td / 'CLOSEOUT.md'}")
+    print(f"Project phase: {phase}")
+    if enforcement:
+        print("Enforcement: " + "; ".join(enforcement))
+
+
+def objective_cmd(args: argparse.Namespace) -> None:
+    td = task_dir()
+    entry = f"\n## Objective: {now()}\n\n{args.text}\n"
+    if args.metric:
+        entry += "\n### Success metric\n\n" + args.metric + "\n"
+    append_markdown(td / "OBJECTIVES.md", entry)
+    append_event("objective", command="objective", details={"text": args.text, "metric": args.metric})
+    print(f"Objective recorded in: {td / 'OBJECTIVES.md'}")
+
+
+def observe_cmd(args: argparse.Namespace) -> None:
+    if bool(args.file) == bool(args.text):
+        die("Provide exactly one of --file or --text")
+    if args.file:
+        source = Path(args.file)
+        if not source.exists() or not source.is_file():
+            die(f"Observation source not found: {source}")
+        body = source.read_text(errors="replace")
+        source_label = f"file: `{source}`"
+    else:
+        body = args.text
+        source_label = "inline text"
+    title = args.title or f"Observation from {args.source}"
+    td = task_dir()
+    append_markdown(
+        td / "OBSERVATIONS.md",
+        f"\n## {title}\n\n- Captured: {now()}\n- Source: `{args.source}`\n- Input: {source_label}\n\n{body}\n",
+    )
+    append_event("observe", command="observe", details={"source": args.source, "title": title})
+    print(f"Observation recorded in: {td / 'OBSERVATIONS.md'}")
+
+
+def evaluate_cmd(args: argparse.Namespace) -> None:
+    if args.score < 0 or args.score > 5:
+        die("--score must be between 0 and 5")
+    td = task_dir()
+    status = "pass" if args.score >= args.pass_score else "fail"
+    append_markdown(
+        td / "EVALUATIONS.md",
+        f"\n## Evaluation: {now()}\n\n"
+        f"- Rubric: `{args.rubric}`\n"
+        f"- Score: {args.score}/5\n"
+        f"- Pass threshold: {args.pass_score}/5\n"
+        f"- Status: {status}\n\n"
+        f"### Assessment\n\n{args.text}\n",
+    )
+    append_event("evaluate", command="evaluate", details={"rubric": args.rubric, "score": args.score, "status": status})
+    print(f"Evaluation recorded in: {td / 'EVALUATIONS.md'} ({status})")
+
+
+def learn_cmd(args: argparse.Namespace) -> None:
+    td = task_dir()
+    append_markdown(td / "LEARNINGS.md", f"\n## Learning: {now()}\n\n{args.text}\n")
+    append_event("learn", command="learn", details={"text": args.text})
+    print(f"Learning recorded in: {td / 'LEARNINGS.md'}")
+
+
+def improve_cmd(args: argparse.Namespace) -> None:
+    td = task_dir()
+    priority = args.priority or "normal"
+    append_markdown(
+        td / "IMPROVEMENTS.md",
+        f"\n## Improvement: {now()}\n\n- Priority: `{priority}`\n- Owner: `{args.owner or 'unassigned'}`\n\n{args.text}\n",
+    )
+    append_event("improve", command="improve", details={"text": args.text, "priority": priority, "owner": args.owner})
+    print(f"Improvement recorded in: {td / 'IMPROVEMENTS.md'}")
+
+
+def feedback_cycle_cmd(args: argparse.Namespace) -> None:
+    tid = current_task_id()
+    td = task_dir(tid)
+    sections = [
+        ("Objectives", td / "OBJECTIVES.md"),
+        ("Context", td / "CONTEXT.md"),
+        ("Observations", td / "OBSERVATIONS.md"),
+        ("Evaluations", td / "EVALUATIONS.md"),
+        ("Learnings", td / "LEARNINGS.md"),
+        ("Improvements", td / "IMPROVEMENTS.md"),
+        ("Approvals", td / "APPROVALS.md"),
+        ("Validation", td / "VALIDATION.md"),
+    ]
+    parts = [f"# FEEDBACK LOOP: {tid}\n", f"Generated: {now()}\n"]
+    for title, path in sections:
+        parts.append(f"\n## {title}\n")
+        if path.exists():
+            content = path.read_text(errors="replace").strip()
+            parts.append(content if content else "No entries recorded.")
+        else:
+            parts.append("No file recorded.")
+        parts.append("\n")
+    parts.append(dedent("""
+        ## Antifragile review questions
+
+        - Did observations expose a weakness or blind spot?
+        - Did evaluations measure progress against the objective?
+        - Did learnings update future behavior or procedures?
+        - Did improvements make the next task safer, clearer, or more capable?
+        - Is anything approved without validation or an explicit risk decision?
+        """))
+    output = "\n".join(parts)
+    target = td / "FEEDBACK_LOOP.md"
+    target.write_text(output)
+    append_event("feedback-cycle", command="feedback-cycle", details={"target": str(target)})
+    print(f"Feedback loop written to: {target}")
+    if args.show:
+        print()
+        print(output)
+
+
+def count_meaningful_entries(path: Path, marker: str) -> int:
+    if not path.exists():
+        return 0
+    return path.read_text(errors="replace").count(marker)
+
+
+
+def markdown_sections(text: str) -> set[str]:
+    sections = set()
+    for line in text.splitlines():
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        if match:
+            sections.add(match.group(2).strip().lower())
+    return sections
+
+
+def write_json(path: Path, data: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+
+
+def extract_state_value(path: Path, key: str, default: str = "") -> str:
+    if not path.exists():
+        return default
+    for line in path.read_text(errors="replace").splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1]
+    return default
+
+
+def score_one_artifact(path: Path, td: Path) -> dict:
+    text = path.read_text(errors="replace") if path.exists() else ""
+    lower = text.lower()
+    sections = markdown_sections(text)
+    approvals = (td / "APPROVALS.md").read_text(errors="replace") if (td / "APPROVALS.md").exists() else ""
+    decisions = (td / "DECISIONS.md").read_text(errors="replace") if (td / "DECISIONS.md").exists() else ""
+    validation = (td / "VALIDATION.md").read_text(errors="replace") if (td / "VALIDATION.md").exists() else ""
+
+    criteria = {
+        "readable_artifact": bool(text.strip()) and (path.suffix == ".md") and (text.lstrip().startswith("#") or len(text.strip()) >= 40),
+        "metadata_or_source": "metadata" in sections or "source:" in lower or "agent/source:" in lower or "captured:" in lower,
+        "report_body": "report" in sections or "assessment" in sections or len(text.strip().split()) >= 30,
+        "validation_or_evidence": any(term in lower for term in ["validation", "evidence", "test", "command", "output", "pass", "fail"]) or path.name in validation,
+        "approval_or_decision_linkage": path.parent.name in {"approved", "rejected"} or path.name in approvals or path.name in decisions,
+    }
+    score = sum(1 for ok in criteria.values() if ok)
+    return {
+        "artifact": str(path),
+        "name": path.name,
+        "bucket": path.parent.name,
+        "score": score,
+        "max_score": 5,
+        "criteria": criteria,
+    }
+
+
+def current_task_artifacts(td: Path) -> list[Path]:
+    artifacts: list[Path] = []
+    for bucket in ["outbox", "approved", "rejected"]:
+        folder = td / bucket
+        if folder.exists():
+            artifacts.extend(sorted(folder.glob("*.md")))
+    return artifacts
+
+
+def score_artifacts_cmd(args: argparse.Namespace) -> None:
+    tid = current_task_id()
+    td = task_dir(tid)
+    scored = [score_one_artifact(path, td) for path in current_task_artifacts(td)]
+    average = round(sum(item["score"] for item in scored) / len(scored), 2) if scored else 0.0
+    passed = args.fail_under is None or average >= args.fail_under
+    payload = {
+        "task_id": tid,
+        "generated_at": now(),
+        "artifact_count": len(scored),
+        "average_score": average,
+        "max_score": 5,
+        "passed": passed,
+        "rubric": [
+            "readable_artifact",
+            "metadata_or_source",
+            "report_body",
+            "validation_or_evidence",
+            "approval_or_decision_linkage",
+        ],
+        "artifacts": scored,
+    }
+    scores_json = td / "scores.json"
+    write_json(scores_json, payload)
+
+    lines = [f"# SCORES: {tid}", "", f"Generated: {payload['generated_at']}", "", f"Artifacts scored: {len(scored)}", f"Average score: {average}/5", ""]
+    lines.extend(["## Rubric", ""])
+    for criterion in payload["rubric"]:
+        lines.append(f"- {criterion}")
+    lines.extend(["", "## Artifacts", "", "| Artifact | Bucket | Score | Missing criteria |", "|----------|--------|-------|------------------|"])
+    if scored:
+        for item in scored:
+            missing = ", ".join(name for name, ok in item["criteria"].items() if not ok) or "none"
+            lines.append(f"| `{item['name']}` | `{item['bucket']}` | {item['score']}/5 | {missing} |")
+    else:
+        lines.append("| none | none | 0/5 | no artifacts found |")
+    lines.extend(["", "## Deterministic Limits", "", "This score checks structure and linkage only; it does not judge semantic quality."])
+    rubrics = load_evaluation_rubrics()
+    if rubrics:
+        lines.extend(["", "## Evaluation rubrics (registry/evaluations.yaml)", ""])
+        for name, fields in rubrics.items():
+            lines.append(f"- `{name}` (pass {fields.get('pass_score', '?')}): {fields.get('purpose', '')}")
+    scores_md = td / "SCORES.md"
+    scores_md.write_text("\n".join(lines) + "\n")
+    append_markdown(td / "EVALUATIONS.md", f"\n## Evaluation: {now()}\n\n- Rubric: `artifact_scoring`\n- Score: {round(average)}/5\n- Pass threshold: {args.fail_under if args.fail_under is not None else 'not enforced'}\n- Status: {'pass' if passed else 'fail'}\n\n### Assessment\n\nDeterministic artifact scoring wrote `{scores_md}` and `{scores_json}`. Average score: {average}/5 across {len(scored)} artifacts.\n")
+    append_event("score-artifacts", command="score-artifacts", details={"target": str(scores_md), "scores_json": str(scores_json), "average_score": average, "passed": passed})
+    if args.show:
+        print(scores_md.read_text())
+    print(f"Scores written to: {scores_md}")
+    if not passed:
+        raise SystemExit(1)
+
+
+def parse_memory_file(path: Path) -> dict:
+    text = path.read_text(errors="replace")
+    tags = []
+    source_repo = "unknown"
+    owners = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("- tags:"):
+            raw = stripped.split(":", 1)[1].strip()
+            tags = [tag.strip().lower() for tag in re.split(r"[, ]+", raw) if tag.strip() and tag.strip().lower() != "none"]
+        elif stripped.lower().startswith("- source repo:"):
+            source_repo = stripped.split(":", 1)[1].strip().strip("`") or "unknown"
+        elif stripped.lower().startswith("- owner:"):
+            owners.append(stripped.split(":", 1)[1].strip().strip("`").lower())
+    words = re.findall(r"[a-z][a-z0-9_-]{3,}", text.lower())
+    stop = {"promoted", "learning", "source", "repo", "task", "tags", "captured", "recorded", "should", "would", "could", "with", "from", "that", "this", "into", "have", "make"}
+    filtered = [word for word in words if word not in stop]
+    phrases = [" ".join(filtered[i:i+3]) for i in range(max(0, len(filtered) - 2))]
+    return {"file": str(path), "name": path.name, "tags": tags, "source_repo": source_repo, "owners": owners, "phrases": phrases}
+
+
+def build_trends(limit: int | None = None) -> dict:
+    memory_dir = AGENT_SYSTEM_DIR / "memory"
+    files = sorted(memory_dir.glob("*.learning.md")) if memory_dir.exists() else []
+    if limit is not None:
+        files = files[-limit:]
+    items = [parse_memory_file(path) for path in files]
+    tag_counts = Counter(tag for item in items for tag in item["tags"])
+    owner_counts = Counter(owner for item in items for owner in item["owners"] if owner)
+    repo_counts = Counter(item["source_repo"] for item in items)
+    phrase_counts = Counter(phrase for item in items for phrase in set(item["phrases"]))
+    repeated = []
+    for label, counter in [("tag", tag_counts), ("owner", owner_counts), ("source_repo", repo_counts), ("phrase", phrase_counts)]:
+        for value, count in counter.most_common(20):
+            if count >= 2 and value != "unknown":
+                repeated.append({"type": label, "value": value, "count": count, "candidate_improvement": f"Review repeated {label} `{value}` across {count} promoted learnings."})
+    return {
+        "generated_at": now(),
+        "learning_count": len(items),
+        "files": [item["name"] for item in items],
+        "tags": dict(tag_counts.most_common()),
+        "owners": dict(owner_counts.most_common()),
+        "source_repos": dict(repo_counts.most_common()),
+        "repeated_phrases": dict(phrase_counts.most_common(20)),
+        "candidate_improvements": repeated,
+    }
+
+
+def trend_report_cmd(args: argparse.Namespace) -> None:
+    memory_dir = AGENT_SYSTEM_DIR / "memory"
+    memory_dir.mkdir(exist_ok=True)
+    trends = build_trends(args.limit)
+    trends_json = memory_dir / "trends.json"
+    write_json(trends_json, trends)
+    lines = ["# TREND REPORT", "", f"Generated: {trends['generated_at']}", "", f"Promoted learnings reviewed: {trends['learning_count']}", "", "## Recurring Tags", ""]
+    lines.extend([f"- `{key}`: {value}" for key, value in trends["tags"].items()] or ["- none"])
+    lines.extend(["", "## Source Repos", ""])
+    lines.extend([f"- `{key}`: {value}" for key, value in trends["source_repos"].items()] or ["- none"])
+    lines.extend(["", "## Candidate Improvements", ""])
+    lines.extend([f"- {item['candidate_improvement']}" for item in trends["candidate_improvements"]] or ["- No repeated issues detected yet."])
+    report = memory_dir / "TREND_REPORT.md"
+    report.write_text("\n".join(lines) + "\n")
+    if args.show:
+        print(report.read_text())
+    print(f"Trend report written to: {report}")
+
+
+def parse_registered_repos() -> list[Path]:
+    repos_file = AGENT_SYSTEM_DIR / "registry" / "repos.yaml"
+    repos: list[Path] = []
+    if repos_file.exists():
+        for line in repos_file.read_text(errors="replace").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("path:"):
+                raw = stripped.split(":", 1)[1].strip().strip('"\'')
+                repos.append(Path(raw).expanduser())
+    cwd = Path.cwd().resolve()
+    if (cwd / ".spark-flow" / "tasks").exists():
+        repos.append(cwd)
+    seen: set[str] = set()
+    unique = []
+    for repo in repos:
+        key = str(repo.resolve()) if repo.exists() else str(repo)
+        if key not in seen:
+            seen.add(key)
+            unique.append(repo)
+    return unique
+
+
+def task_metadata(repo: Path, task_path: Path) -> dict:
+    state_file = task_path / "STATE.txt"
+    task_id = task_path.name
+    current_phase = extract_state_value(state_file, "CURRENT_PHASE", "unknown")
+    description = extract_state_value(state_file, "DESCRIPTION", "")
+    gate_file = task_path / "GATE_REPORT.md"
+    gate_status = "missing"
+    if gate_file.exists():
+        gate_text = gate_file.read_text(errors="replace")
+        gate_status = "fail" if "- FAIL:" in gate_text else "pass"
+    scores_file = task_path / "scores.json"
+    score_status = "missing"
+    average_score = None
+    if scores_file.exists():
+        try:
+            score_data = json.loads(scores_file.read_text(errors="replace"))
+            average_score = score_data.get("average_score")
+            score_status = "pass" if score_data.get("passed", True) else "fail"
+        except json.JSONDecodeError:
+            score_status = "invalid"
+    return {
+        "repo": str(repo),
+        "task_id": task_id,
+        "path": str(task_path),
+        "description": description,
+        "current_phase": current_phase,
+        "closed": current_phase == "complete",
+        "gate_status": gate_status,
+        "score_status": score_status,
+        "average_score": average_score,
+        "has_closeout": (task_path / "CLOSEOUT.md").exists(),
+        "approved_count": len(list((task_path / "approved").glob("*.md"))) if (task_path / "approved").exists() else 0,
+        "rejected_count": len(list((task_path / "rejected").glob("*.md"))) if (task_path / "rejected").exists() else 0,
+    }
+
+
+def build_task_index(extra_repo: str | None = None) -> list[dict]:
+    repos = parse_registered_repos()
+    if extra_repo:
+        repos.append(Path(extra_repo).expanduser())
+    tasks = []
+    for repo in repos:
+        tasks_dir = repo / ".spark-flow" / "tasks"
+        if not tasks_dir.exists():
+            continue
+        for task_path in sorted(path for path in tasks_dir.iterdir() if path.is_dir()):
+            tasks.append(task_metadata(repo, task_path))
+    return tasks
+
+
+def write_task_index(tasks: list[dict]) -> tuple[Path, Path]:
+    dashboard_dir = AGENT_SYSTEM_DIR / "dashboard"
+    dashboard_dir.mkdir(exist_ok=True)
+    json_path = dashboard_dir / "tasks.json"
+    write_json(json_path, {"generated_at": now(), "task_count": len(tasks), "tasks": tasks})
+    lines = ["# TASK INDEX", "", f"Generated: {now()}", "", f"Tasks indexed: {len(tasks)}", "", "| Repo | Task | Phase | Gate | Score | Approved | Rejected |", "|------|------|-------|------|-------|----------|----------|"]
+    if tasks:
+        for item in tasks:
+            score = item["score_status"] if item["average_score"] is None else f"{item['average_score']}/5"
+            lines.append(f"| `{item['repo']}` | `{item['task_id']}` | `{item['current_phase']}` | `{item['gate_status']}` | `{score}` | {item['approved_count']} | {item['rejected_count']} |")
+    else:
+        lines.append("| none | none | none | missing | missing | 0 | 0 |")
+    md_path = dashboard_dir / "TASK_INDEX.md"
+    md_path.write_text("\n".join(lines) + "\n")
+    return md_path, json_path
+
+
+def index_tasks_cmd(args: argparse.Namespace) -> None:
+    tasks = build_task_index(args.repo)
+    md_path, json_path = write_task_index(tasks)
+    if args.show:
+        print(md_path.read_text())
+    print(f"Task index written to: {md_path}")
+    print(f"Task JSON written to: {json_path}")
+
+
+
+PROJECT_MARKERS = {
+    "package.json", "pyproject.toml", "requirements.txt", "Makefile", "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "build.gradle.kts",
+}
+SKIP_PROJECT_DIRS = {".git", ".spark-flow", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", ".next", ".pytest_cache"}
+
+
+def read_json_file(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(errors="replace"))
+    except Exception:
+        return {}
+
+
+def parse_make_targets(path: Path) -> set[str]:
+    targets: set[str] = set()
+    if not path.exists():
+        return targets
+    for line in path.read_text(errors="replace").splitlines():
+        match = re.match(r"^([A-Za-z0-9_.-]+):(?:\s|$)", line)
+        if match and not line.startswith("\t"):
+            targets.add(match.group(1))
+    return targets
+
+
+def project_markers(project: Path) -> list[str]:
+    return sorted(marker for marker in PROJECT_MARKERS if (project / marker).exists())
+
+
+def package_manager(project: Path) -> str:
+    if (project / "pnpm-lock.yaml").exists():
+        return "pnpm"
+    if (project / "yarn.lock").exists():
+        return "yarn"
+    if (project / "package-lock.json").exists():
+        return "npm"
+    return "npm"
+
+
+def detect_project_commands(project: Path) -> dict[str, list[str]]:
+    commands: dict[str, list[str]] = {"setup": [], "build": [], "test": [], "lint": [], "typecheck": [], "dev": [], "validate": []}
+    pkg = project / "package.json"
+    if pkg.exists():
+        manager = package_manager(project)
+        scripts = read_json_file(pkg).get("scripts", {})
+        script_map = {"build": "build", "test": "test", "lint": "lint", "typecheck": "typecheck", "dev": "dev"}
+        for name, bucket in script_map.items():
+            if name in scripts:
+                commands[bucket].append(f"{manager} run {name}")
+        if "check" in scripts:
+            commands["validate"].append(f"{manager} run check")
+        if "packageManager" in read_json_file(pkg):
+            commands["setup"].append("corepack enable")
+    if (project / "pyproject.toml").exists() or (project / "requirements.txt").exists():
+        if (project / "requirements.txt").exists():
+            commands["setup"].append("python3 -m pip install -r requirements.txt")
+        if (project / "tests").exists() or (project / "pytest.ini").exists():
+            commands["test"].append("python3 -m pytest")
+        else:
+            commands["test"].append("python3 -m unittest discover")
+        commands["validate"].append("python3 -m py_compile $(find . -name '*.py' -not -path './.venv/*' -not -path './venv/*')")
+    make_targets = parse_make_targets(project / "Makefile")
+    for target in ["build", "test", "lint", "typecheck", "validate", "dev"]:
+        if target in make_targets:
+            commands[target].insert(0, f"make {target}")
+    if (project / "Cargo.toml").exists():
+        commands["build"].append("cargo build")
+        commands["test"].append("cargo test")
+    if (project / "go.mod").exists():
+        commands["build"].append("go build ./...")
+        commands["test"].append("go test ./...")
+    if (project / "pom.xml").exists():
+        commands["build"].append("mvn package")
+        commands["test"].append("mvn test")
+    if (project / "build.gradle").exists() or (project / "build.gradle.kts").exists():
+        commands["build"].append("./gradlew build")
+        commands["test"].append("./gradlew test")
+    return {key: sorted(dict.fromkeys(value)) for key, value in commands.items() if value}
+
+
+def git_short_status_for(repo: Path) -> str:
+    try:
+        return subprocess.check_output(["git", "-C", str(repo), "status", "--short"], text=True, stderr=subprocess.DEVNULL).strip()
+    except Exception:
+        return ""
+
+
+def find_projects(repo: Path) -> list[Path]:
+    if not repo.exists() or not repo.is_dir():
+        return []
+    projects: list[Path] = []
+    stack = [(repo, 0)]
+    while stack:
+        current, depth = stack.pop()
+        if any(part in SKIP_PROJECT_DIRS for part in current.relative_to(repo).parts if current != repo):
+            continue
+        if project_markers(current):
+            projects.append(current)
+        if depth >= 2:
+            continue
+        try:
+            children = sorted(path for path in current.iterdir() if path.is_dir() and path.name not in SKIP_PROJECT_DIRS)
+        except OSError:
+            children = []
+        for child in reversed(children):
+            stack.append((child, depth + 1))
+    seen: set[str] = set()
+    unique = []
+    for project in projects:
+        key = str(project.resolve())
+        if key not in seen:
+            seen.add(key)
+            unique.append(project)
+    return unique
+
+
+def discover_projects(extra_repo: str | None = None) -> dict:
+    repos = parse_registered_repos()
+    if extra_repo:
+        repos.append(Path(extra_repo).expanduser())
+    repo_entries = []
+    project_entries = []
+    for repo in repos:
+        exists = repo.exists() and repo.is_dir()
+        repo_status = git_short_status_for(repo) if exists else "missing"
+        repo_entries.append({"repo": str(repo), "exists": exists, "git_status": repo_status})
+        if not exists:
+            continue
+        for project in find_projects(repo):
+            commands = detect_project_commands(project)
+            tasks_dir = repo / ".spark-flow" / "tasks"
+            open_tasks = []
+            if tasks_dir.exists():
+                for task_path in sorted(path for path in tasks_dir.iterdir() if path.is_dir()):
+                    phase = extract_state_value(task_path / "STATE.txt", "CURRENT_PHASE", "unknown")
+                    if phase != "complete":
+                        open_tasks.append(task_path.name)
+            project_entries.append({
+                "repo": str(repo),
+                "project": str(project),
+                "relative_path": str(project.relative_to(repo)) if project != repo else ".",
+                "markers": project_markers(project),
+                "commands": commands,
+                "has_build_or_test": bool(commands.get("build") or commands.get("test") or commands.get("validate")),
+                "git_status": repo_status,
+                "open_tasks": open_tasks,
+            })
+    return {"generated_at": now(), "repo_count": len(repo_entries), "project_count": len(project_entries), "repos": repo_entries, "projects": project_entries}
+
+
+def write_project_discovery(discovery: dict) -> tuple[Path, Path]:
+    dashboard_dir = AGENT_SYSTEM_DIR / "dashboard"
+    dashboard_dir.mkdir(exist_ok=True)
+    json_path = dashboard_dir / "projects.json"
+    write_json(json_path, discovery)
+    lines = ["# PROJECT DISCOVERY", "", f"Generated: {discovery['generated_at']}", "", f"Repos scanned: {discovery['repo_count']}", f"Projects found: {discovery['project_count']}", "", "## Projects", "", "| Repo | Project | Markers | Build/Test/Validate | Open tasks |", "|------|---------|---------|---------------------|------------|"]
+    if discovery["projects"]:
+        for item in discovery["projects"]:
+            command_bits = []
+            for bucket in ["build", "test", "validate"]:
+                if item["commands"].get(bucket):
+                    command_bits.append(f"{bucket}: `{item['commands'][bucket][0]}`")
+            lines.append(f"| `{item['repo']}` | `{item['relative_path']}` | {', '.join(item['markers'])} | {'; '.join(command_bits) or 'none detected'} | {', '.join(item['open_tasks']) or 'none'} |")
+    else:
+        lines.append("| none | none | none | none | none |")
+    md_path = dashboard_dir / "PROJECTS.md"
+    md_path.write_text("\n".join(lines) + "\n")
+    return md_path, json_path
+
+
+def discover_projects_cmd(args: argparse.Namespace) -> None:
+    discovery = discover_projects(args.repo)
+    md_path, json_path = write_project_discovery(discovery)
+    if args.show:
+        print(md_path.read_text())
+    print(f"Project discovery written to: {md_path}")
+    print(f"Project JSON written to: {json_path}")
+
+
+def build_next_work(discovery: dict, limit: int) -> list[dict]:
+    items: list[dict] = []
+    for project in discovery["projects"]:
+        priority = 50
+        reasons = []
+        if project["open_tasks"]:
+            priority += 30
+            reasons.append(f"open task(s): {', '.join(project['open_tasks'])}")
+        if project["git_status"]:
+            priority += 20
+            reasons.append("repo has uncommitted changes")
+        if not project["has_build_or_test"]:
+            priority += 15
+            reasons.append("no build/test/validate command detected")
+        else:
+            reasons.append("build/test commands detected")
+        if "README.md" not in [p.name for p in Path(project["project"]).glob("README.md")]:
+            priority += 5
+            reasons.append("missing project README")
+        suggested = "Resume open Spark Flow task" if project["open_tasks"] else "Create finishing task"
+        if not project["has_build_or_test"]:
+            suggested = "Add validation command discovery or project checks"
+        items.append({
+            "priority": priority,
+            "repo": project["repo"],
+            "project": project["project"],
+            "relative_path": project["relative_path"],
+            "suggested_action": suggested,
+            "reasons": reasons,
+            "commands": project["commands"],
+        })
+    return sorted(items, key=lambda item: item["priority"], reverse=True)[:limit]
+
+
+def write_next_work(discovery: dict, items: list[dict]) -> tuple[Path, Path]:
+    dashboard_dir = AGENT_SYSTEM_DIR / "dashboard"
+    dashboard_dir.mkdir(exist_ok=True)
+    payload = {"generated_at": now(), "items": items}
+    json_path = dashboard_dir / "next_work.json"
+    write_json(json_path, payload)
+    lines = ["# NEXT WORK", "", f"Generated: {payload['generated_at']}", "", "This backlog is generated from registered repos, discovered project markers, open Spark Flow tasks, git status, and detected build/test commands.", ""]
+    if items:
+        for idx, item in enumerate(items, 1):
+            lines.extend([
+                f"## {idx}. {item['suggested_action']}",
+                "",
+                f"- Repo: `{item['repo']}`",
+                f"- Project: `{item['relative_path']}`",
+                f"- Priority: {item['priority']}",
+                f"- Reasons: {', '.join(item['reasons'])}",
+            ])
+            for bucket in ["build", "test", "validate", "lint", "typecheck"]:
+                if item["commands"].get(bucket):
+                    lines.append(f"- {bucket}: `{item['commands'][bucket][0]}`")
+            lines.append("")
+    else:
+        lines.append("No project work items detected.")
+    md_path = dashboard_dir / "NEXT_WORK.md"
+    md_path.write_text("\n".join(lines) + "\n")
+    return md_path, json_path
+
+
+def plan_next_cmd(args: argparse.Namespace) -> None:
+    discovery = discover_projects(args.repo)
+    write_project_discovery(discovery)
+    items = build_next_work(discovery, args.limit)
+    md_path, json_path = write_next_work(discovery, items)
+    if args.show:
+        print(md_path.read_text())
+    print(f"Next-work backlog written to: {md_path}")
+    print(f"Next-work JSON written to: {json_path}")
+    if getattr(args, "init", False):
+        if not items:
+            die("No next-work items detected to initialize a task from.")
+        top = items[0]
+        task_id = args.task_id or f"next-{datetime.now().strftime('%H%M%S')}"
+        create_task(task_id, top["suggested_action"])
+        print(f"Initialized next task: {task_id} ({top['suggested_action']})")
+        print(f"Next: {CLI_NAME} snapshot --show")
+
+
+def repo_memory_dir() -> Path:
+    return FLOW_DIR / "memory"
+
+
+def repo_memory_db() -> Path:
+    return repo_memory_dir() / "memory.sqlite"
+
+
+def ensure_repo_memory() -> Path:
+    memory_dir = repo_memory_dir()
+    (memory_dir / "debriefs").mkdir(parents=True, exist_ok=True)
+    (memory_dir / "tasks").mkdir(parents=True, exist_ok=True)
+    defaults = {
+        "project_brief.md": f"# Project brief\n\nRepo: `{Path.cwd()}`\n\n## Purpose\n\nDescribe what this project is trying to become.\n",
+        "current_state.md": "# Current state\n\nNo debrief has been recorded yet.\n",
+        "decisions.md": "# Decisions\n\nDurable architecture and product decisions are recorded here.\n",
+        "tasks/backlog.yaml": "version: 1\ntasks: []\n",
+    }
+    for relative, content in defaults.items():
+        target = memory_dir / relative
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+    with sqlite3.connect(repo_memory_db()) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS debriefs (id INTEGER PRIMARY KEY, created_at TEXT NOT NULL, path TEXT NOT NULL, summary TEXT NOT NULL)")
+        conn.execute("CREATE TABLE IF NOT EXISTS recommendations (id INTEGER PRIMARY KEY, created_at TEXT NOT NULL, option_id TEXT NOT NULL, label TEXT NOT NULL, score INTEGER NOT NULL, evidence TEXT NOT NULL)")
+        conn.execute("CREATE TABLE IF NOT EXISTS choices (id INTEGER PRIMARY KEY, created_at TEXT NOT NULL, option_id TEXT NOT NULL, label TEXT NOT NULL, reason TEXT NOT NULL)")
+    phase_json = memory_dir / "project_phase.json"
+    if not phase_json.exists():
+        phase_json.write_text(
+            json.dumps(
+                {
+                    "phase": UNASSESSED_PHASE,
+                    "lifecycle_status": LIFECYCLE_REGISTERED,
+                    "updated_at": now(),
+                    "history": [
+                        {"phase": UNASSESSED_PHASE, "lifecycle_status": LIFECYCLE_REGISTERED, "at": now(), "note": "memory-init"}
+                    ],
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        render_project_phase_md(UNASSESSED_PHASE, memory_dir, lifecycle_status=LIFECYCLE_REGISTERED)
+    return memory_dir
+
+
+def memory_init_cmd(args: argparse.Namespace) -> None:
+    memory_dir = ensure_repo_memory()
+    print(f"Repo memory initialized: {memory_dir}")
+    print(f"Project phase: {get_project_phase()}")
+    if args.show:
+        for name in ["project_brief.md", "current_state.md", "decisions.md", "PROJECT_PHASE.md", "tasks/backlog.yaml"]:
+            path = memory_dir / name
+            if path.exists():
+                print(f"\n## {path}\n")
+                print(path.read_text(errors="replace"))
+
+
+# ---------------------------------------------------------------------
+# Project phase state (Prototype -> Alpha -> Beta -> MVP)
+# Distinct from task phases (plan/build/patch/review/close) in STATE.txt.
+# ---------------------------------------------------------------------
+
+PROJECT_PHASE_FALLBACK = ["prototype", "alpha", "beta", "mvp"]
+
+
+def parse_phase_routing() -> dict:
+    """Parse registry/phase_routing.yaml into project-phase metadata.
+
+    Returns {"phases": {name: {...}}, "sequence": [...], "default": name}.
+    """
+    path = AGENT_SYSTEM_DIR / "registry" / "phase_routing.yaml"
+    phases: dict[str, dict] = {}
+    sequence: list[str] = []
+    default_phase = "prototype"
+    if not path.exists():
+        return {"phases": phases, "sequence": list(PROJECT_PHASE_FALLBACK), "default": default_phase}
+    in_project = False
+    current: str | None = None
+    in_exit = False
+    for raw in path.read_text(errors="replace").splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped == "project_phases:":
+            in_project = True
+            current = None
+            in_exit = False
+            continue
+        if stripped.startswith("default_project_phase:"):
+            default_phase = stripped.split(":", 1)[1].strip()
+            continue
+        if stripped.startswith("recommended_sequence:"):
+            raw_seq = stripped.split(":", 1)[1].strip().strip("[]")
+            sequence = [item.strip() for item in raw_seq.split(",") if item.strip()]
+            continue
+        if not raw.startswith(" ") and stripped.endswith(":"):
+            in_project = stripped == "project_phases:"
+            current = None
+            in_exit = False
+            continue
+        if not in_project:
+            continue
+        if raw.startswith("  ") and not raw.startswith("    ") and stripped.endswith(":"):
+            current = stripped[:-1]
+            phases[current] = {"exit_criteria": []}
+            in_exit = False
+        elif current and raw.startswith("    ") and stripped == "exit_criteria:":
+            in_exit = True
+        elif current and in_exit and stripped.startswith("- "):
+            phases[current]["exit_criteria"].append(stripped[2:].strip().strip('"\''))
+        elif current and raw.startswith("    ") and stripped == "memory_templates:":
+            in_exit = False
+        elif current and raw.startswith("    ") and ":" in stripped and not stripped.startswith("- "):
+            key, value = stripped.split(":", 1)
+            phases[current][key.strip()] = value.strip().strip('"\'')
+            in_exit = False
+    if not sequence:
+        try:
+            sequence = sorted(phases.keys(), key=lambda name: int(phases[name].get("order", "99")))
+        except (TypeError, ValueError):
+            sequence = list(phases.keys())
+        if not sequence:
+            sequence = list(PROJECT_PHASE_FALLBACK)
+    return {"phases": phases, "sequence": sequence, "default": default_phase}
+
+
+# Lifecycle status (tracking) is distinct from maturity phase (product evolution).
+# Tracking:  registered -> assessed -> classified
+# Maturity:  unassessed -> prototype -> alpha -> beta -> mvp
+UNASSESSED_PHASE = "unassessed"
+LIFECYCLE_REGISTERED = "registered"
+LIFECYCLE_ASSESSED = "assessed"
+LIFECYCLE_CLASSIFIED = "classified"
+LIFECYCLE_STATUSES = [LIFECYCLE_REGISTERED, LIFECYCLE_ASSESSED, LIFECYCLE_CLASSIFIED]
+
+
+def project_phase_path() -> Path:
+    return repo_memory_dir() / "project_phase.json"
+
+
+def read_project_state() -> dict:
+    path = project_phase_path()
+    if path.exists():
+        try:
+            return json.loads(path.read_text(errors="replace"))
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def get_project_phase() -> str:
+    data = read_project_state()
+    if data:
+        return data.get("phase", UNASSESSED_PHASE)
+    # No state file yet: treat as untracked, fall back to routing default for callers
+    # that need a concrete phase. Tracking-aware callers should use get_lifecycle_status().
+    return parse_phase_routing()["default"]
+
+
+def get_lifecycle_status() -> str:
+    data = read_project_state()
+    if not data:
+        return LIFECYCLE_REGISTERED
+    explicit = data.get("lifecycle_status")
+    if explicit:
+        return explicit
+    # Back-compat: a stored real phase implies the project was classified.
+    phase = data.get("phase", UNASSESSED_PHASE)
+    return LIFECYCLE_CLASSIFIED if phase and phase != UNASSESSED_PHASE else LIFECYCLE_REGISTERED
+
+
+def is_classified() -> bool:
+    return get_lifecycle_status() == LIFECYCLE_CLASSIFIED and get_project_phase() != UNASSESSED_PHASE
+
+
+def render_project_phase_md(phase: str, memory_dir: Path | None = None, lifecycle_status: str | None = None) -> Path:
+    memory_dir = memory_dir or repo_memory_dir()
+    routing = parse_phase_routing()
+    meta = routing["phases"].get(phase, {})
+    lifecycle_status = lifecycle_status or get_lifecycle_status()
+    if phase == UNASSESSED_PHASE:
+        label = "Unassessed"
+        criteria: list[str] = []
+        goal = (
+            "Maturity not yet classified. Run `liaison assess-project`, then "
+            "`liaison project-phase classify` to assign Prototype/Alpha/Beta/MVP."
+        )
+    else:
+        label = meta.get("label", phase.capitalize())
+        criteria = meta.get("exit_criteria", [])
+        goal = meta.get("liaison_focus", "Define what this phase must prove for the product.")
+    lines = [
+        "# Project phase record",
+        "",
+        f"- Project: `{Path.cwd()}`",
+        "- Registered in: `$LIAISON_ROOT/registry/repos.yaml`",
+        f"- Lifecycle status: {lifecycle_status}",
+        f"- Current project phase: {label}",
+        f"- Phase id: `{phase}`",
+        f"- Updated: {now()}",
+        f"- Validation: {meta.get('validation', 'optional')}",
+        f"- Debrief required: {meta.get('debrief_required', 'false')}",
+        "",
+        "## Phase goal",
+        "",
+        goal,
+        "",
+        "## Exit criteria (from phase_routing.yaml)",
+        "",
+    ]
+    lines.extend([f"- [ ] {item}" for item in criteria] or ["- [ ] Classify the project to load exit criteria"])
+    lines.extend(["", "## Next slice", "", "<!-- Single sentence goal for the next liaison init -->", ""])
+    target = memory_dir / "PROJECT_PHASE.md"
+    target.write_text("\n".join(lines) + "\n")
+    return target
+
+
+def set_project_phase(phase: str, note: str = "", lifecycle_status: str | None = None) -> Path:
+    ensure_repo_memory()
+    path = project_phase_path()
+    data = read_project_state()
+    history: list[dict] = data.get("history", []) if isinstance(data.get("history"), list) else []
+    if lifecycle_status is None:
+        lifecycle_status = data.get("lifecycle_status") or (
+            LIFECYCLE_CLASSIFIED if phase != UNASSESSED_PHASE else LIFECYCLE_REGISTERED
+        )
+    history.append({"phase": phase, "lifecycle_status": lifecycle_status, "at": now(), "note": note})
+    payload = {
+        "phase": phase,
+        "lifecycle_status": lifecycle_status,
+        "updated_at": now(),
+        "history": history,
+    }
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+    render_project_phase_md(phase, lifecycle_status=lifecycle_status)
+    append_markdown(
+        repo_memory_dir() / "decisions.md",
+        f"\n## Project phase: {now()}\n\nPhase=`{phase}` lifecycle=`{lifecycle_status}`. {note}\n",
+    )
+    return path
+
+
+def set_lifecycle_status(status: str, note: str = "") -> Path:
+    """Update tracking status without changing the maturity phase."""
+    data = read_project_state()
+    phase = data.get("phase", UNASSESSED_PHASE)
+    return set_project_phase(phase, note, lifecycle_status=status)
+
+
+def next_project_phase(sequence: list[str], phase: str) -> str | None:
+    if phase in sequence:
+        idx = sequence.index(phase)
+        if idx + 1 < len(sequence):
+            return sequence[idx + 1]
+    return None
+
+
+def read_recommended_phase() -> str | None:
+    path = repo_memory_dir() / "ASSESSMENT.md"
+    if not path.exists():
+        return None
+    for line in path.read_text(errors="replace").splitlines():
+        if line.strip().lower().startswith("- recommended phase:"):
+            return line.split(":", 1)[1].strip().lower()
+    return None
+
+
+def project_phase_cmd(args: argparse.Namespace) -> None:
+    ensure_repo_memory()
+    routing = parse_phase_routing()
+    phases = routing["phases"]
+    sequence = routing["sequence"]
+    known_phases = set(sequence) | set(phases.keys())
+    action = args.action
+    if action == "show":
+        phase = get_project_phase()
+        lifecycle = get_lifecycle_status()
+        print(f"Project: {Path.cwd()}")
+        print(f"Lifecycle status: {lifecycle}")
+        if phase == UNASSESSED_PHASE:
+            print("Maturity phase: unassessed")
+            rec = read_recommended_phase()
+            if rec:
+                print(f"Assessment recommends: {rec} (run classify to confirm)")
+            print(f"Next: {CLI_NAME} assess-project, then {CLI_NAME} project-phase classify")
+            return
+        meta = phases.get(phase, {})
+        print(f"Maturity phase: {meta.get('label', phase)} ({phase})")
+        print(f"Validation: {meta.get('validation', 'optional')}  Debrief required: {meta.get('debrief_required', 'false')}")
+        if meta.get("liaison_focus"):
+            print(f"Liaison focus: {meta['liaison_focus']}")
+        print("Exit criteria:")
+        for item in meta.get("exit_criteria", []) or ["(none defined)"]:
+            print(f"  - [ ] {item}")
+        nxt = next_project_phase(sequence, phase)
+        print(f"Next phase: {nxt or '(already at final phase)'}")
+        return
+    if action == "classify":
+        target_phase = args.phase.lower() if args.phase else None
+        if getattr(args, "from_assessment", False) and not target_phase:
+            target_phase = read_recommended_phase()
+            if not target_phase:
+                die(f"No assessment found. Run `{CLI_NAME} assess-project` first.")
+        if not target_phase:
+            die(f"Usage: {CLI_NAME} project-phase classify --phase <name> | --from-assessment")
+        if target_phase not in known_phases:
+            die(f"Unknown phase '{target_phase}'. Known: {', '.join(sequence)}")
+        set_project_phase(target_phase, args.reason or "classified", lifecycle_status=LIFECYCLE_CLASSIFIED)
+        print(f"Project classified as: {target_phase}")
+        return
+    if action == "set":
+        if not args.phase:
+            die("Usage: project-phase set <phase>")
+        phase = args.phase.lower()
+        if phase not in known_phases:
+            die(f"Unknown phase '{phase}'. Known: {', '.join(sequence)}")
+        set_project_phase(phase, args.note or "set via project-phase set", lifecycle_status=LIFECYCLE_CLASSIFIED)
+        print(f"Project phase set to: {phase}")
+        return
+    if action == "advance":
+        if not is_classified():
+            die(f"Project is not classified yet (lifecycle={get_lifecycle_status()}, phase={get_project_phase()}). "
+                f"Run `{CLI_NAME} assess-project`, then `{CLI_NAME} project-phase classify`.")
+        phase = get_project_phase()
+        nxt = next_project_phase(sequence, phase)
+        if not nxt:
+            print(f"Already at final phase: {phase}")
+            return
+        meta = phases.get(phase, {})
+        print(f"Advancing {phase} -> {nxt}. Confirm exit criteria for {phase}:")
+        for item in meta.get("exit_criteria", []) or ["(none defined)"]:
+            print(f"  - {item}")
+        if not args.yes:
+            if sys.stdin.isatty():
+                if input("Type 'yes' to confirm advancement: ").strip().lower() != "yes":
+                    die("Advancement cancelled.")
+            else:
+                die("Non-interactive shell: pass --yes to confirm advancement.")
+        set_project_phase(nxt, f"advanced from {phase}", lifecycle_status=LIFECYCLE_CLASSIFIED)
+        print(f"Project phase advanced to: {nxt}")
+        return
+    die(f"Unknown project-phase action: {action}")
+
+
+def reporter_step_cmd(args: argparse.Namespace) -> None:
+    from dashboard.command_center.data import (
+        REPORTER_STEP_KEYS,
+        reporter_step_advance,
+        reporter_step_set,
+        reporter_step_show,
+    )
+
+    tid = args.task_id or current_task_id()
+    td = task_dir(tid)
+    if not td.exists():
+        die(f"Task directory not found: {td}. Run `{CLI_NAME} init <task-id> \"description\"` first.")
+    action = args.action
+    if action == "show":
+        reporter_step_show(td)
+        return
+    if action == "set":
+        if not args.step:
+            die(f"Usage: {CLI_NAME} reporter-step set <step> [--complete]  "
+                f"(steps: {', '.join(REPORTER_STEP_KEYS)})")
+        try:
+            merged = reporter_step_set(td, args.step, mark_complete=bool(args.complete))
+        except ValueError as exc:
+            die(str(exc))
+        print(f"Reporter step set: current={merged['current_step_id']}")
+        if merged["completed_steps"]:
+            print(f"Completed: {', '.join(merged['completed_steps'])}")
+        return
+    if action == "advance":
+        try:
+            merged = reporter_step_advance(td, force=bool(args.force))
+        except ValueError as exc:
+            die(str(exc))
+        print(f"Reporter step advanced: current={merged['current_step_id']}")
+        if merged["allowed_next"]:
+            print(f"Allowed next: {', '.join(merged['allowed_next'])}")
+        return
+    die(f"Unknown reporter-step action: {action}")
+
+
+def assess_repo() -> dict:
+    root = Path.cwd()
+    readme = root / "README.md"
+    has_readme = readme.exists()
+    tests_dir = (root / "tests").exists() or (root / "test").exists()
+    has_test_files = bool(list(root.glob("test_*.py")) or list(root.glob("*_test.py")))
+    has_tests = tests_dir or has_test_files
+    has_pyproject = (root / "pyproject.toml").exists()
+    has_package = (root / "package.json").exists()
+    has_makefile = (root / "Makefile").exists()
+    has_ci = (root / ".github" / "workflows").exists() or (root / ".gitlab-ci.yml").exists()
+    deploy_doc = False
+    for candidate in [root / "DEPLOY.md", root / "docs" / "DEPLOY.md", readme]:
+        if candidate.exists() and re.search(r"deploy|rollback", candidate.read_text(errors="replace"), re.I):
+            deploy_doc = True
+            break
+    commands = detect_project_commands(root)
+    has_build_test = bool(commands.get("test") or commands.get("build") or commands.get("validate"))
+    tasks_dir = root / ".spark-flow" / "tasks"
+    closeouts = list(tasks_dir.glob("*/CLOSEOUT.md")) if tasks_dir.exists() else []
+    profile = repo_default_profile()
+    has_profile = bool(profile and profile != "none")
+
+    if deploy_doc and has_tests and has_ci:
+        recommended = "mvp"
+    elif has_tests and has_ci:
+        recommended = "beta"
+    elif has_tests and (has_pyproject or has_package or has_build_test):
+        recommended = "alpha"
+    else:
+        recommended = "prototype"
+
+    return {
+        "root": str(root),
+        "has_readme": has_readme,
+        "has_tests": has_tests,
+        "has_pyproject": has_pyproject,
+        "has_package": has_package,
+        "has_makefile": has_makefile,
+        "has_ci": has_ci,
+        "deploy_doc": deploy_doc,
+        "has_build_test": has_build_test,
+        "has_closeouts": bool(closeouts),
+        "has_profile": has_profile,
+        "default_profile": profile or "none",
+        "recommended_phase": recommended,
+    }
+
+
+def assessment_rationale(assessment: dict) -> str:
+    rec = assessment["recommended_phase"]
+    if rec == "mvp":
+        return "Deploy/rollback docs, tests, and CI are present — the repo already shows production-readiness signals."
+    if rec == "beta":
+        return "Tests and CI exist but no documented deploy/rollback path — operator-usable, not yet production-ready."
+    if rec == "alpha":
+        return "Tests plus a build/test toolchain exist — a repeatable internal slice, not yet operator-hardened."
+    return "Minimal automated-quality signals — prove one happy path first."
+
+
+def write_assessment(assessment: dict) -> Path:
+    memory_dir = ensure_repo_memory()
+
+    def mark(flag: bool) -> str:
+        return "yes" if flag else "no"
+
+    lines = [
+        "# Project assessment",
+        "",
+        f"- Project: `{assessment['root']}`",
+        f"- Assessed: {now()}",
+        f"- Recommended phase: {assessment['recommended_phase']}",
+        f"- Default profile: {assessment['default_profile']}",
+        "",
+        "## Evidence",
+        "",
+        f"- README present: {mark(assessment['has_readme'])}",
+        f"- Tests present: {mark(assessment['has_tests'])}",
+        f"- Build/test commands detected: {mark(assessment['has_build_test'])}",
+        f"- Python project (pyproject.toml): {mark(assessment['has_pyproject'])}",
+        f"- Node project (package.json): {mark(assessment['has_package'])}",
+        f"- Makefile: {mark(assessment['has_makefile'])}",
+        f"- CI config: {mark(assessment['has_ci'])}",
+        f"- Deploy/rollback documented: {mark(assessment['deploy_doc'])}",
+        f"- Validation profile registered: {mark(assessment['has_profile'])}",
+        f"- Prior liaison closeouts: {mark(assessment['has_closeouts'])}",
+        "",
+        "## Recommendation rationale",
+        "",
+        assessment_rationale(assessment),
+        "",
+        "## Next step",
+        "",
+        f"Classify with: `{CLI_NAME} project-phase classify --from-assessment --yes`",
+        f"or override: `{CLI_NAME} project-phase classify --phase <prototype|alpha|beta|mvp>`",
+        "",
+    ]
+    target = memory_dir / "ASSESSMENT.md"
+    target.write_text("\n".join(lines) + "\n")
+    return target
+
+
+def assess_project_cmd(args: argparse.Namespace) -> None:
+    ensure_repo_memory()
+    assessment = assess_repo()
+    target = write_assessment(assessment)
+    set_lifecycle_status(LIFECYCLE_ASSESSED, f"assessed; recommended {assessment['recommended_phase']}")
+    print(f"Assessment written to: {target}")
+    print(f"Recommended phase: {assessment['recommended_phase']}")
+    print(f"Lifecycle status: {get_lifecycle_status()}")
+    if args.show:
+        print()
+        print(target.read_text())
+    print(f"Classify with: {CLI_NAME} project-phase classify --from-assessment --yes")
+
+
+def plan_project_cmd(args: argparse.Namespace) -> None:
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from dashboard.command_center.project_intake import build_project_intake, open_tasks_for_repo
+    from dashboard.command_center.project_plans import (
+        build_project_plan_card,
+        format_operating_plan_markdown,
+        load_project_plan,
+        merge_plan_with_intake,
+        resolve_project_key_and_path,
+        write_project_operating_plan,
+    )
+
+    project_key, repo_path = resolve_project_key_and_path(getattr(args, "project", None))
+    if not repo_path and not project_key:
+        die("Could not resolve repo path. Use --project <registry-key> or run from a registered repo.")
+    plan = load_project_plan(project_key)
+    if not plan:
+        die(f"No project plan for registry key: {project_key}")
+    intake = None
+    open_tasks: list = []
+    if repo_path and Path(repo_path).expanduser().exists():
+        open_tasks = open_tasks_for_repo(repo_path)
+        intake = build_project_intake(project_key, repo_path, open_tasks)
+        plan = merge_plan_with_intake(plan, intake)
+    from dashboard.command_center.data import build_focus
+
+    focus = build_focus(project_key)
+    card = build_project_plan_card(
+        project_key,
+        repo_path or "",
+        plan,
+        focus,
+        open_tasks,
+    )
+    wrote_path = None
+    if getattr(args, "write", False):
+        if repo_path and Path(repo_path).expanduser().exists():
+            try:
+                wrote_path = write_project_operating_plan(
+                    repo_path,
+                    plan,
+                    project_key=project_key,
+                    intake=intake,
+                )
+                card["has_on_disk_plan"] = True
+                card["on_disk_path"] = str(wrote_path)
+            except OSError as exc:
+                print(f"Warning: could not write plan ({exc}); printing to stdout.", file=sys.stderr)
+        else:
+            print(
+                f"Warning: repo path missing or not writable ({repo_path}); printing plan to stdout.",
+                file=sys.stderr,
+            )
+    if getattr(args, "json", False):
+        payload = {"plan": plan, "card": card}
+        if wrote_path:
+            payload["written_path"] = str(wrote_path)
+        print(json.dumps(payload, indent=2))
+        return
+    print(f"Project: {project_key}")
+    print(f"Path: {repo_path or '—'}")
+    print(f"Workflow: {plan.get('workflow')} · Pattern: {plan.get('pattern') or '—'}")
+    print(f"Maturity target: {plan.get('maturity_target')}")
+    print(f"Research gate: {(plan.get('research_gate') or {}).get('summary', '—')}")
+    eng = plan.get("engineering_gate") or {}
+    print(f"Engineering gate: {eng.get('summary', '—')}")
+    if eng.get("blocked"):
+        print("  (engineering blocked until profile/pattern set or intake ready)")
+    if plan.get("backlog"):
+        print("\nBacklog:")
+        for line in plan["backlog"][:8]:
+            print(f"  - {line}")
+    if wrote_path:
+        print(f"\nWrote: {wrote_path}")
+    if getattr(args, "show", False) or (getattr(args, "write", False) and not wrote_path):
+        print()
+        print(
+            format_operating_plan_markdown(
+                plan,
+                project_key=project_key,
+                repo_path=repo_path or "",
+                intake=intake,
+            )
+        )
+
+
+def record_build_cmd(args: argparse.Namespace) -> None:
+    """Append a structured build step to the current task BUILD_TRACE.md."""
+    tid = current_task_id()
+    td = task_dir(tid)
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from dashboard.command_center.build_corpus import append_build_step
+
+    trace = append_build_step(
+        td,
+        agent=args.agent,
+        action=args.action,
+        outcome=args.outcome,
+        notes=args.notes or "",
+    )
+    append_event(
+        "record-build",
+        command="record-build",
+        details={"agent": args.agent, "action": args.action, "trace": str(trace)},
+    )
+    print(f"Build step recorded in: {trace}")
+
+
+def export_agent_recipe_cmd(args: argparse.Namespace) -> None:
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from dashboard.command_center.build_corpus import (
+        export_agent_recipe,
+        format_agent_recipe_markdown,
+        write_agent_recipe_file,
+    )
+    from dashboard.command_center.project_plans import load_project_plan, resolve_project_key_and_path
+
+    project_key, repo_path = resolve_project_key_and_path(getattr(args, "project", None))
+    if not project_key:
+        die("Could not resolve project. Use --from-project <registry-key> or run from a registered repo.")
+    if not repo_path or not Path(repo_path).expanduser().exists():
+        die(f"Repo path not found for project: {project_key}")
+
+    plan = load_project_plan(project_key) or {}
+    task_ids = None
+    if getattr(args, "task_id", None):
+        task_ids = [args.task_id]
+    recipe = export_agent_recipe(
+        project_key,
+        repo_path,
+        recipe_id=getattr(args, "recipe_id", None),
+        task_ids=task_ids,
+        project_plan=plan,
+    )
+    wrote_path = None
+    if getattr(args, "write", False):
+        wrote_path = write_agent_recipe_file(recipe)
+    if getattr(args, "json", False):
+        payload = {"recipe": recipe}
+        if wrote_path:
+            payload["written_path"] = str(wrote_path)
+        print(json.dumps(payload, indent=2))
+        return
+    if wrote_path:
+        print(f"Agent recipe written to: {wrote_path}")
+    if getattr(args, "show", False) or not wrote_path:
+        print(format_agent_recipe_markdown(recipe))
+
+
+def project_intake_cmd(args: argparse.Namespace) -> None:
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from dashboard.command_center.project_intake import (
+        build_project_intake,
+        open_tasks_for_repo,
+        resolve_project_key_and_path,
+        write_intake_report,
+    )
+
+    project_key, repo_path = resolve_project_key_and_path(getattr(args, "project", None))
+    if not repo_path:
+        die("Could not resolve repo path. Use --project <registry-key> or run from a registered repo.")
+    open_tasks = open_tasks_for_repo(repo_path)
+    intake = build_project_intake(project_key, repo_path, open_tasks)
+    if getattr(args, "write", False) and repo_path:
+        target = write_intake_report(repo_path, intake)
+        intake["report_path"] = str(target)
+    if getattr(args, "json", False):
+        print(json.dumps(intake, indent=2))
+        return
+    print(f"Project: {project_key}")
+    print(f"Path: {repo_path}")
+    print(f"Intake ready: {intake['intake_ready']}")
+    print(f"Ready to build: {intake['ready_to_build']}")
+    print(f"Recommended lane: {intake['recommended_lane']}")
+    if intake.get("blockers"):
+        print("\nBlockers:")
+        for b in intake["blockers"]:
+            cmd = f" → {b['liaison_cmd']}" if b.get("liaison_cmd") else ""
+            print(f"  [{b['severity']}] {b['label']}: {b['detail']}{cmd}")
+    if getattr(args, "write", False) and intake.get("report_path"):
+        print(f"\nReport: {intake['report_path']}")
+    if getattr(args, "show", False):
+        from dashboard.command_center.project_intake import format_intake_report
+
+        print()
+        print(format_intake_report(intake))
+
+
+def register_project_cmd(args: argparse.Namespace) -> None:
+    target = Path(args.path).expanduser().resolve()
+    if not target.exists():
+        die(f"Path does not exist: {target}")
+    name = args.name or re.sub(r"[^a-zA-Z0-9_]", "_", target.name)
+    profile = args.profile or "none"
+    role = args.role or "registered project"
+    repos_file = AGENT_SYSTEM_DIR / "registry" / "repos.yaml"
+    text = repos_file.read_text(errors="replace") if repos_file.exists() else "version: 1\nrepos:\n"
+    already = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("path:"):
+            existing = Path(stripped.split(":", 1)[1].strip().strip('"\'')).expanduser()
+            try:
+                if existing.resolve() == target:
+                    already = True
+            except OSError:
+                pass
+    if already:
+        print(f"Already registered: {target}")
+    else:
+        if not text.endswith("\n"):
+            text += "\n"
+        text += f"  {name}:\n    path: {target}\n    role: {role}\n    default_profile: {profile}\n"
+        repos_file.write_text(text)
+        print(f"Registered project '{name}' -> {target}")
+    cwd = Path.cwd()
+    try:
+        os.chdir(target)
+        ensure_repo_memory()
+        if args.phase:
+            phase = args.phase.lower()
+            set_project_phase(phase, "registered with explicit phase override", lifecycle_status=LIFECYCLE_CLASSIFIED)
+            lifecycle = LIFECYCLE_CLASSIFIED
+        else:
+            phase = UNASSESSED_PHASE
+            set_project_phase(UNASSESSED_PHASE, "registered via register-project", lifecycle_status=LIFECYCLE_REGISTERED)
+            lifecycle = LIFECYCLE_REGISTERED
+        write_structured_current_state(phase=phase)
+    finally:
+        os.chdir(cwd)
+    print(f"Lifecycle status: {lifecycle}")
+    print(f"Project phase: {phase}")
+    print(f"Memory initialized at: {target}/.spark-flow/memory")
+    if lifecycle == LIFECYCLE_REGISTERED:
+        print(f"Next: cd {target} && {CLI_NAME} assess-project, then {CLI_NAME} project-phase classify")
+    else:
+        print(f"Next: cd {target} && {CLI_NAME} init <task-id> \"first slice\"")
+
+
+def write_structured_current_state(evidence: dict | None = None, options: list[dict] | None = None, phase: str | None = None, after_task: str | None = None) -> Path:
+    """Durable, compact current_state.md: phase, built/todo, next action.
+
+    Full debrief narratives live under memory/debriefs/; current_state stays a
+    short production-facing summary rather than a raw debrief dump.
+    """
+    memory_dir = repo_memory_dir()
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    phase = phase or get_project_phase()
+    routing = parse_phase_routing()
+    meta = routing["phases"].get(phase, {})
+    debrief_dir = memory_dir / "debriefs"
+    debriefs = sorted(debrief_dir.glob("*.md")) if debrief_dir.exists() else []
+    latest_debrief = str(debriefs[-1]) if debriefs else "(none yet)"
+    if options:
+        next_action = options[0]["label"]
+    else:
+        next_action = f"Run `{CLI_NAME} debrief --show` to generate ranked options."
+    try:
+        git_line = capture(["git", "status", "--short"])
+    except Exception:
+        git_line = ""
+    lines = [
+        "# Current state",
+        "",
+        f"- Project: `{Path.cwd()}`",
+        f"- Updated: {now()}",
+        f"- Project phase: {meta.get('label', phase)} (`{phase}`)",
+        f"- After task: {after_task or 'debrief only'}",
+        "",
+        "## Latest debrief",
+        "",
+        f"- `{latest_debrief}`",
+        "",
+        "## Next recommended action",
+        "",
+        f"- {next_action}",
+        "",
+        "## Built (closed slices)",
+        "",
+    ]
+    built_log = memory_dir / "built_log.md"
+    if built_log.exists():
+        built_lines = [line for line in built_log.read_text(errors="replace").splitlines() if line.strip().startswith("- ")]
+        lines.extend(built_lines[-10:] or ["- (none recorded)"])
+    else:
+        lines.append("- (none recorded)")
+    lines.extend(["", "## Open recommendations / todo", ""])
+    if options:
+        lines.extend([f"- {option['label']} (score {option['score']})" for option in options[:6]])
+    else:
+        lines.append("- See `tasks/backlog.yaml`")
+    lines.extend(["", "## Repo git status", "", "```text", git_line or "clean", "```", ""])
+    target = memory_dir / "current_state.md"
+    target.write_text("\n".join(lines) + "\n")
+    return target
+
+
+def update_memory_after_close(task_id: str, summary: str) -> None:
+    try:
+        ensure_repo_memory()
+    except Exception:
+        return
+    built_log = repo_memory_dir() / "built_log.md"
+    if not built_log.exists():
+        built_log.write_text("# Built log\n\nClosed slices are recorded here as evidence of what the project has built.\n")
+    append_markdown(built_log, f"\n- {now()} `{task_id}`: {summary}\n")
+    try:
+        write_structured_current_state(after_task=task_id)
+    except Exception:
+        pass
+
+
+def read_if_exists(path: Path, limit: int = 4000) -> str:
+    if not path.exists() or not path.is_file():
+        return ""
+    text = path.read_text(errors="replace")
+    return text[:limit]
+
+
+def repo_context_evidence() -> dict:
+    ensure_repo_memory()
+    root = Path.cwd()
+    docs = []
+    for candidate in [root / "README.md", root / "pyproject.toml", root / "package.json", root / "Makefile"]:
+        if candidate.exists():
+            docs.append({"path": str(candidate), "excerpt": read_if_exists(candidate, 1800)})
+    docs_dir = root / "docs"
+    if docs_dir.exists():
+        for path in sorted(docs_dir.glob("*.md"))[:8]:
+            docs.append({"path": str(path), "excerpt": read_if_exists(path, 1200)})
+    memory_dir = repo_memory_dir()
+    memory_docs = []
+    for relative in ["project_brief.md", "current_state.md", "decisions.md", "tasks/backlog.yaml"]:
+        path = memory_dir / relative
+        memory_docs.append({"path": str(path), "excerpt": read_if_exists(path, 1800)})
+    try:
+        status = capture(["git", "status", "--short"])
+    except Exception:
+        status = "not a git repo"
+    try:
+        log = capture(["git", "log", "--oneline", "-5"])
+    except Exception:
+        log = "not available"
+    return {"repo": str(root), "docs": docs, "memory_docs": memory_docs, "git_status": status, "git_log": log, "commands": detect_project_commands(root)}
+
+
+def infer_project_summary(evidence: dict) -> str:
+    readme = next((doc["excerpt"] for doc in evidence["docs"] if doc["path"].endswith("README.md")), "")
+    if readme:
+        first = next((line.strip("# ").strip() for line in readme.splitlines() if line.strip()), "Project")
+        return first
+    return Path(evidence["repo"]).name
+
+
+def build_recommendation_options(evidence: dict, limit: int = 6) -> list[dict]:
+    commands = evidence.get("commands", {})
+    has_tests = bool(commands.get("test") or commands.get("validate"))
+    dirty = bool(evidence.get("git_status"))
+    options = [
+        {
+            "id": "recommended",
+            "label": "Stabilize the deterministic baseline",
+            "kind": "recommended",
+            "score": 15 + (3 if has_tests else 0),
+            "why": "Keeps the project shippable before adding retrieval or UI complexity.",
+            "agents": ["codex", "testing-hardening", "spark-flow-review"],
+            "steps": ["Run current validation", "Fix failing baseline behavior", "Add missing tests", "Record debrief and decision"],
+            "pivot": "Pivot only if validation shows the baseline cannot represent the target workflow.",
+        },
+        {
+            "id": "near-1",
+            "label": "Improve project memory and task context",
+            "kind": "near",
+            "score": 13,
+            "why": "Makes future agent recommendations evidence-based instead of chat-history based.",
+            "agents": ["codex", "spark-flow-planning"],
+            "steps": ["Fill project_brief.md", "Update current_state.md", "Rank backlog.yaml", "Run recommend again"],
+            "pivot": "Promote this to recommended when repeated confusion appears in debriefs.",
+        },
+        {
+            "id": "near-2",
+            "label": "Add retrieval quality checks",
+            "kind": "near",
+            "score": 12,
+            "why": "Turns search behavior into a measurable contract before changing retrieval strategy.",
+            "agents": ["codex", "synthetic-data-designer", "testing-hardening"],
+            "steps": ["Create small query fixture set", "Add expected top documents", "Measure ranking failures", "Use failures to guide retrieval changes"],
+            "pivot": "Use as the main path if user-visible query quality is the primary blocker.",
+        },
+        {
+            "id": "near-3",
+            "label": "Package the CLI workflow",
+            "kind": "near",
+            "score": 10,
+            "why": "Makes the project easier to run and verify from a clean checkout.",
+            "agents": ["codex", "testing-hardening"],
+            "steps": ["Install editable package", "Verify console script", "Document command examples", "Add smoke command"],
+            "pivot": "Use when onboarding or handoff friction is the dominant issue.",
+        },
+        {
+            "id": "expansive",
+            "label": "Prototype semantic retrieval behind the baseline",
+            "kind": "expansive",
+            "score": 8,
+            "why": "Adds a richer direction while staying tethered to the deterministic index and quality checks.",
+            "agents": ["codex", "synthetic-data-designer", "data_flywheel"],
+            "steps": ["Keep token search as fallback", "Design query/eval set", "Add optional embedding backend", "Compare against baseline before promotion"],
+            "pivot": "Consider stable only after it beats baseline on recorded evals without adding unacceptable setup cost.",
+        },
+    ]
+    if dirty:
+        options.insert(1, {
+            "id": "near-cleanup",
+            "label": "Resolve dirty working tree context",
+            "kind": "near",
+            "score": 14,
+            "why": "Uncommitted state is evidence that the next agent needs a clear checkpoint before larger changes.",
+            "agents": ["codex", "spark-flow-closeout"],
+            "steps": ["Review git status", "Classify generated vs source changes", "Run validation", "Record a decision before continuing"],
+            "pivot": "Use as the first step when unrelated local changes make implementation ambiguous.",
+        })
+    return sorted(options, key=lambda item: item["score"], reverse=True)[:limit]
+
+
+def render_debrief(evidence: dict, options: list[dict]) -> str:
+    project = infer_project_summary(evidence)
+    command_lines = []
+    for bucket in ["setup", "build", "test", "validate", "lint", "typecheck"]:
+        for command in evidence.get("commands", {}).get(bucket, []):
+            command_lines.append(f"- {bucket}: `{command}`")
+    evidence_lines = []
+    for doc in evidence["docs"][:8]:
+        evidence_lines.append(f"- `{doc['path']}`")
+    for doc in evidence["memory_docs"]:
+        evidence_lines.append(f"- `{doc['path']}`")
+    lines = [
+        f"# Debrief: {project}", "", f"Generated: {now()}", "",
+        "## Current project state", "", f"- Repo: `{evidence['repo']}`", f"- Summary: {project}", f"- Git status: `{evidence['git_status'] or 'clean'}`", "",
+        "## Evidence loaded", "", *(evidence_lines or ["- No evidence files found."]), "",
+        "## Detected commands", "", *(command_lines or ["- No build/test commands detected."]), "",
+        "## Recommended choices", "",
+    ]
+    for idx, option in enumerate(options, 1):
+        lines.extend([
+            f"### {idx}. {option['label']}", "",
+            f"- Type: `{option['kind']}`", f"- Score: {option['score']}", f"- Why: {option['why']}", f"- Agents: {', '.join(option['agents'])}",
+            "- Steps:", *(f"  - {step}" for step in option["steps"]), f"- Pivot rule: {option['pivot']}", "",
+        ])
+    lines.extend([
+        "## Recommendation rule", "",
+        "No recommendation is valid unless it cites memory, repo files, git state, or command output.",
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def write_backlog(options: list[dict]) -> Path:
+    path = repo_memory_dir() / "tasks" / "backlog.yaml"
+    lines = ["version: 1", "tasks:"]
+    for option in options:
+        lines.extend([
+            f"  - id: {option['id']}", f"    label: {json.dumps(option['label'])}", f"    kind: {option['kind']}", f"    score: {option['score']}", f"    agents: {json.dumps(option['agents'])}", f"    why: {json.dumps(option['why'])}",
+        ])
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def debrief_cmd(args: argparse.Namespace) -> None:
+    memory_dir = ensure_repo_memory()
+    evidence = repo_context_evidence()
+    options = build_recommendation_options(evidence, args.limit)
+    content = render_debrief(evidence, options)
+    stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
+    target = memory_dir / "debriefs" / f"{stamp}.md"
+    target.write_text(content)
+    write_backlog(options)
+    write_structured_current_state(evidence, options, get_project_phase())
+    with sqlite3.connect(repo_memory_db()) as conn:
+        conn.execute("INSERT INTO debriefs (created_at, path, summary) VALUES (?, ?, ?)", (now(), str(target), infer_project_summary(evidence)))
+        conn.execute("DELETE FROM recommendations")
+        for option in options:
+            conn.execute("INSERT INTO recommendations (created_at, option_id, label, score, evidence) VALUES (?, ?, ?, ?, ?)", (now(), option["id"], option["label"], option["score"], json.dumps(option)))
+    print(f"Debrief written to: {target}")
+    print(f"Current state updated: {memory_dir / 'current_state.md'}")
+    if args.show:
+        print()
+        print(content)
+
+
+def latest_recommendations(limit: int) -> list[dict]:
+    ensure_repo_memory()
+    with sqlite3.connect(repo_memory_db()) as conn:
+        rows = conn.execute("SELECT evidence FROM recommendations ORDER BY score DESC, id ASC LIMIT ?", (limit,)).fetchall()
+    return [json.loads(row[0]) for row in rows]
+
+
+def recommend_cmd(args: argparse.Namespace) -> None:
+    options = latest_recommendations(args.limit)
+    if not options:
+        evidence = repo_context_evidence()
+        options = build_recommendation_options(evidence, args.limit)
+        write_backlog(options)
+    lines = ["# RECOMMENDATIONS", "", f"Generated: {now()}", ""]
+    for idx, option in enumerate(options, 1):
+        lines.extend([f"## {idx}. {option['label']}", "", f"- Type: `{option['kind']}`", f"- Score: {option['score']}", f"- Agents: {', '.join(option['agents'])}", f"- Why: {option['why']}", f"- Pivot rule: {option['pivot']}", ""])
+    output = "\n".join(lines)
+    if args.show:
+        print(output)
+    else:
+        print(f"Recommendations available: {len(options)}")
+        print("Run with --show to print them.")
+
+
+def select_recommendation(options: list[dict], value: str) -> dict | None:
+    selected = next((option for option in options if option["id"] == value or option["label"] == value), None)
+    if selected is None and value.isdigit():
+        idx = int(value) - 1
+        if 0 <= idx < len(options):
+            selected = options[idx]
+    return selected
+
+
+def record_choice(selected: dict, reason: str, show: bool = False) -> Path:
+    memory_dir = ensure_repo_memory()
+    agents = "\n".join(f"- {agent}" for agent in selected["agents"])
+    steps = "\n".join(f"{idx + 1}. {step}" for idx, step in enumerate(selected["steps"]))
+    choice = f"""# Choice: {selected['label']}
+
+- Chosen at: {now()}
+- Option id: `{selected['id']}`
+- Type: `{selected['kind']}`
+- Score: {selected['score']}
+- Reason: {reason}
+
+## Agents
+
+{agents}
+
+## Execution plan
+
+{steps}
+
+## Pivot rule
+
+{selected['pivot']}
+"""
+    target = memory_dir / "CHOICE.md"
+    target.write_text(choice)
+    append_markdown(memory_dir / "decisions.md", f"\n## Choice: {now()}\n\nSelected `{selected['id']}`: {selected['label']}\n\nReason: {reason}\n")
+    with sqlite3.connect(repo_memory_db()) as conn:
+        conn.execute("INSERT INTO choices (created_at, option_id, label, reason) VALUES (?, ?, ?, ?)", (now(), selected["id"], selected["label"], reason))
+    print(f"Choice written to: {target}")
+    if show:
+        print()
+        print(choice)
+    return target
+
+
+def choose_cmd(args: argparse.Namespace) -> None:
+    options = latest_recommendations(10)
+    if not options:
+        die(f"No recommendations found. Run `{CLI_NAME} debrief --show` first.")
+    selected = select_recommendation(options, args.option)
+    if selected is None:
+        die(f"Unknown option: {args.option}")
+    reason = args.reason or "Operator selected this path from debrief recommendations."
+    record_choice(selected, reason, args.show)
+    if getattr(args, "init", False):
+        task_id = args.task_id or f"{selected['id']}-{datetime.now().strftime('%H%M%S')}"
+        create_task(task_id, selected["label"])
+        print(f"Initialized next task: {task_id}")
+        print(f"Next: {CLI_NAME} snapshot --show")
+
+
+def refresh_recommendation_memory(limit: int = 6) -> None:
+    evidence = repo_context_evidence()
+    options = build_recommendation_options(evidence, limit)
+    content = render_debrief(evidence, options)
+    stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
+    target = repo_memory_dir() / "debriefs" / f"{stamp}.md"
+    target.write_text(content)
+    write_backlog(options)
+    write_structured_current_state(evidence, options, get_project_phase())
+    with sqlite3.connect(repo_memory_db()) as conn:
+        conn.execute("DELETE FROM recommendations")
+        for option in options:
+            conn.execute("INSERT INTO recommendations (created_at, option_id, label, score, evidence) VALUES (?, ?, ?, ?, ?)", (now(), option["id"], option["label"], option["score"], json.dumps(option)))
+
+
+def parse_registry_map(filename: str, section: str) -> dict[str, dict[str, str]]:
+    """Minimal YAML parser for registry/agents.yaml and registry/repos.yaml."""
+    path = AGENT_SYSTEM_DIR / "registry" / filename
+    entries: dict[str, dict[str, str]] = {}
+    if not path.exists():
+        return entries
+    current_key: str | None = None
+    for line in path.read_text(errors="replace").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith(f"{section}:"):
+            continue
+        if not line.startswith(" ") and stripped.endswith(":"):
+            continue
+        if line.startswith("  ") and not line.startswith("    ") and stripped.endswith(":"):
+            current_key = stripped[:-1]
+            entries[current_key] = {}
+            continue
+        if current_key and line.startswith("    ") and ":" in stripped:
+            field, value = stripped.split(":", 1)
+            entries[current_key][field.strip()] = value.strip().strip('"\'')
+    return entries
+
+
+def collect_look_state(refresh: bool = False) -> dict:
+    if refresh:
+        tasks = build_task_index(None)
+        write_task_index(tasks)
+        discovery = discover_projects(None)
+        write_project_discovery(discovery)
+    else:
+        tasks = build_task_index(None)
+        discovery = discover_projects(None)
+    trends = build_trends(None)
+    hub_agents = parse_registry_map("agents.yaml", "agents")
+    registered = parse_registry_map("repos.yaml", "repos")
+    open_tasks = [item for item in tasks if not item["closed"]]
+    memory_dir = AGENT_SYSTEM_DIR / "memory"
+    learnings = sorted(memory_dir.glob("*.learning.md")) if memory_dir.exists() else []
+    repo_memory = repo_memory_dir()
+    debrief_summary = ""
+    if (repo_memory / "current_state.md").exists():
+        text = (repo_memory / "current_state.md").read_text(errors="replace")
+        debrief_summary = "\n".join(text.splitlines()[:12])
+    recommendations = latest_recommendations(3)
+    if refresh and not recommendations:
+        refresh_recommendation_memory(3)
+        recommendations = latest_recommendations(3)
+    return {
+        "generated_at": now(),
+        "hub_agents": hub_agents,
+        "registered_projects": registered,
+        "tasks": tasks,
+        "open_tasks": open_tasks,
+        "discovery": discovery,
+        "trends": trends,
+        "learnings_count": len(learnings),
+        "recent_learnings": [path.name for path in learnings[-5:]],
+        "debrief_summary": debrief_summary,
+        "recommendations": recommendations,
+        "repo_memory_loaded": repo_memory.exists(),
+    }
+
+
+def print_look_view(state: dict) -> None:
+    print("Liaison — look")
+    print(f"Generated: {state['generated_at']}")
+    print()
+    print("=== Hub agents ===")
+    if state["hub_agents"]:
+        for name, fields in sorted(state["hub_agents"].items()):
+            role = fields.get("role", "—")
+            print(f"  {name}: {role}")
+    else:
+        print("  (none in registry/agents.yaml)")
+    print()
+    print("=== Registered projects ===")
+    if state["registered_projects"]:
+        for name, fields in sorted(state["registered_projects"].items()):
+            path = fields.get("path", "—")
+            role = fields.get("role", "")
+            profile = fields.get("default_profile", "")
+            phase_state = read_repo_phase_state(path)
+            extra = f" [{profile}]" if profile else ""
+            print(f"  {name}: {path}{extra} (lifecycle: {phase_state['lifecycle']}, phase: {phase_state['phase']})")
+            if role:
+                print(f"    {role}")
+    else:
+        print("  (none in registry/repos.yaml)")
+    print()
+    print("=== Open tasks (task phase) ===")
+    if state["open_tasks"]:
+        for item in state["open_tasks"]:
+            desc = item["description"][:60] + "…" if len(item["description"]) > 60 else item["description"]
+            print(f"  {item['task_id']} @ {Path(item['repo']).name}: phase={item['current_phase']} gate={item['gate_status']} — {desc}")
+    else:
+        print("  (no open tasks across registered repos)")
+    print()
+    print(f"=== Task summary ===")
+    total = len(state["tasks"])
+    closed = sum(1 for item in state["tasks"] if item["closed"])
+    print(f"  total={total} open={total - closed} closed={closed}")
+    print()
+    print("=== Memory / debrief ===")
+    print(f"  promoted learnings: {state['learnings_count']}")
+    if state["recent_learnings"]:
+        print(f"  recent: {', '.join(state['recent_learnings'])}")
+    if state["trends"]["candidate_improvements"]:
+        print(f"  trend warnings: {len(state['trends']['candidate_improvements'])}")
+    print(f"  repo memory loaded: {'yes' if state['repo_memory_loaded'] else 'no'}")
+    if state["recommendations"]:
+        print("  top debrief options:")
+        for idx, option in enumerate(state["recommendations"], 1):
+            print(f"    [{idx}] {option['label']} ({option['kind']})")
+    if state["debrief_summary"]:
+        print()
+        print("  current_state (excerpt):")
+        for line in state["debrief_summary"].splitlines():
+            print(f"    {line}")
+    print()
+    print(f"Commands: {CLI_NAME} debrief --show | {CLI_NAME} command-center | {CLI_NAME} dashboard --show")
+
+
+def kanban_bucket(task: dict) -> str:
+    if task.get("closed") or task.get("current_phase") == "complete":
+        return "done"
+    phase = task.get("current_phase", "unknown")
+    if phase == "review":
+        return "review"
+    if phase in {"build", "patch"}:
+        return "in_progress"
+    return "todo"
+
+
+def task_priority(task: dict) -> str:
+    if task.get("gate_status") == "fail":
+        return "P1"
+    if kanban_bucket(task) == "in_progress":
+        return "P2"
+    return "P3"
+
+
+def agent_task_counts(tasks: list[dict], hub_agents: dict) -> dict[str, int]:
+    counts = {name: 0 for name in hub_agents}
+    for task in tasks:
+        if task.get("closed"):
+            continue
+        phase = task.get("current_phase", "plan")
+        agent = ROUTES.get(phase, {}).get("agent", "hermes")
+        counts[agent] = counts.get(agent, 0) + 1
+    return counts
+
+
+def build_stakeholder_inbox(tasks: list[dict]) -> list[dict]:
+    inbox = []
+    for task in sorted(tasks, key=lambda item: (task_priority(item), item["task_id"])):
+        if task.get("closed"):
+            continue
+        inbox.append(
+            {
+                "id": task["task_id"],
+                "request": task["description"],
+                "requester": Path(task["repo"]).name,
+                "owner": ROUTES.get(task.get("current_phase", "plan"), {}).get("agent", "liaison"),
+                "priority": task_priority(task),
+                "status": kanban_bucket(task).upper().replace("_", " "),
+                "age": "—",
+            }
+        )
+    return inbox[:8]
+
+
+def build_dependency_items(state: dict) -> list[dict]:
+    items = []
+    for task in state["open_tasks"]:
+        if task.get("gate_status") == "fail":
+            items.append(
+                {
+                    "type": "BLOCKER",
+                    "item": task["task_id"],
+                    "detail": "Gate failed",
+                    "owner": "liaison",
+                    "status": "BLOCKED",
+                    "eta": "—",
+                }
+            )
+        if task.get("score_status") == "fail":
+            items.append(
+                {
+                    "type": "BLOCKER",
+                    "item": f"{task['task_id']} scores",
+                    "detail": "Artifact scores below threshold",
+                    "owner": "liaison",
+                    "status": "BLOCKED",
+                    "eta": "—",
+                }
+            )
+    for rec in state.get("recommendations", [])[:3]:
+        items.append(
+            {
+                "type": "DECISION",
+                "item": rec["label"],
+                "detail": rec.get("kind", "option"),
+                "owner": "operator",
+                "status": "PENDING",
+                "eta": "—",
+            }
+        )
+    decisions = repo_memory_dir() / "decisions.md"
+    if decisions.exists() and ("## Choice:" in decisions.read_text(errors="replace") or "## Decision:" in decisions.read_text(errors="replace")):
+        items.append(
+            {
+                "type": "APPROVAL",
+                "item": "Recorded operator choice",
+                "detail": "See decisions.md",
+                "owner": "operator",
+                "status": "DONE",
+                "eta": "—",
+            }
+        )
+    return items[:10]
+
+
+def parse_skills_in_use() -> list[dict]:
+    skills = parse_registry_map("skills.yaml", "skills")
+    caps_file = AGENT_SYSTEM_DIR / "config" / "capability_routes.yaml"
+    cap_count = 0
+    if caps_file.exists():
+        cap_count = sum(1 for line in caps_file.read_text(errors="replace").splitlines() if line.strip().startswith("description:"))
+    rows = []
+    for idx, (name, fields) in enumerate(sorted(skills.items())):
+        in_use = 1 if idx < 2 else 0
+        capacity = max(1, cap_count // max(1, len(skills)))
+        util = min(100, 20 + in_use * 35 + (idx % 3) * 8)
+        rows.append(
+            {
+                "skill": name,
+                "use_for": fields.get("use_for", "—"),
+                "in_use": in_use,
+                "capacity": capacity,
+                "util": util,
+                "trend": "↑" if in_use else "→",
+            }
+        )
+    return rows
+
+
+def read_repo_phase_state(repo_path: str) -> dict:
+    if not repo_path:
+        return {"phase": "—", "lifecycle": "—"}
+    phase_file = Path(repo_path).expanduser() / ".spark-flow" / "memory" / "project_phase.json"
+    if phase_file.exists():
+        try:
+            data = json.loads(phase_file.read_text(errors="replace"))
+            phase = data.get("phase", "—")
+            lifecycle = data.get("lifecycle_status")
+            if not lifecycle:
+                lifecycle = LIFECYCLE_CLASSIFIED if phase not in ("—", UNASSESSED_PHASE) else LIFECYCLE_REGISTERED
+            return {"phase": phase, "lifecycle": lifecycle}
+        except (json.JSONDecodeError, OSError):
+            return {"phase": "—", "lifecycle": "—"}
+    return {"phase": "—", "lifecycle": "—"}
+
+
+def read_repo_project_phase(repo_path: str) -> str:
+    return read_repo_phase_state(repo_path)["phase"]
+
+
+def build_project_matrix(state: dict) -> list[dict]:
+    matrix = []
+    for name, fields in state["registered_projects"].items():
+        score = 45
+        open_count = sum(
+            1
+            for task in state["open_tasks"]
+            if name in task["repo"] or Path(task["repo"]).name == name
+        )
+        profile = fields.get("default_profile", "")
+        if profile and profile != "none":
+            score += 20
+        if open_count:
+            score += min(20, open_count * 8)
+        if fields.get("role", "").lower().find("archived") >= 0:
+            score -= 15
+        impact = "High" if score >= 70 else "Med"
+        effort = "Med" if profile else "High"
+        phase_state = read_repo_phase_state(fields.get("path", ""))
+        matrix.append(
+            {
+                "option": name,
+                "label": fields.get("role", name)[:36],
+                "score": min(100, score),
+                "confidence": min(95, 55 + score // 3),
+                "impact": impact,
+                "effort": effort,
+                "contributors": profile or "registry",
+                "phase": phase_state["phase"],
+                "lifecycle": phase_state["lifecycle"],
+            }
+        )
+    for rec in state.get("recommendations", [])[:2]:
+        matrix.append(
+            {
+                "option": rec.get("id", "rec"),
+                "label": rec["label"][:36],
+                "score": min(100, rec.get("score", 50) * 5),
+                "confidence": 75,
+                "impact": "High" if rec.get("kind") == "recommended" else "Med",
+                "effort": "Med",
+                "contributors": ", ".join(rec.get("agents", [])[:2]) or "debrief",
+                "phase": "—",
+                "lifecycle": "—",
+            }
+        )
+    cap = int(os.environ.get("LIAISON_MATRIX_CAP", "0") or "0")
+    ranked = sorted(matrix, key=lambda item: item["score"], reverse=True)
+    return ranked[:cap] if cap > 0 else ranked
+
+
+def build_workload_forecast(state: dict) -> list[dict]:
+    open_count = len(state["open_tasks"])
+    closed = sum(1 for item in state["tasks"] if item["closed"])
+    blockers = sum(1 for item in state["open_tasks"] if item.get("gate_status") == "fail")
+    weeks = [
+        ("This week", open_count, max(0, closed // 3), "Good" if blockers < 2 else "Moderate", "Low" if blockers < 2 else "Medium"),
+        ("Next week", max(0, open_count - 1), max(1, closed // 2), "Moderate", "Medium"),
+        ("Week +2", max(0, open_count + 1), max(1, closed // 2 + 1), "At risk" if open_count > 4 else "Moderate", "High" if open_count > 4 else "Medium"),
+    ]
+    rows = []
+    for label, new_tasks, completions, capacity, risk in weeks:
+        rows.append(
+            {
+                "period": label,
+                "new_tasks": new_tasks,
+                "completions": completions,
+                "net": new_tasks - completions,
+                "capacity": capacity,
+                "risk": risk,
+            }
+        )
+    return rows
+
+
+def _command_center_data_imports():
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from dashboard.command_center.data import collect_command_center_state as _collect
+    from dashboard.command_center.snapshot import print_command_center_snapshot as _print
+
+    return _collect, _print
+
+
+def _cc_truncate(text: str, width: int) -> str:
+    text = str(text).replace("\n", " ")
+    if width <= 0:
+        return ""
+    if len(text) <= width:
+        return text
+    if width <= 1:
+        return text[:width]
+    return text[: width - 1] + "…"
+
+
+def _cc_bar(value: int, width: int) -> str:
+    filled = max(0, min(width, int(width * value / 100)))
+    return "█" * filled + "░" * (width - filled)
+
+
+def _cc_status_line(label: str, value: object, width: int = 18) -> str:
+    return f"{label}: {str(value):<{width}}"
+
+
+def _cc_panel(title: str, lines: list[str], width: int = 118) -> list[str]:
+    top = "+" + "-" * (width - 2) + "+"
+    heading = f"| {title:<{width - 4}} |"
+    body = [f"| {_cc_truncate(line, width - 4):<{width - 4}} |" for line in lines]
+    return [top, heading, top, *body, top]
+
+
+def _cc_print_panel(title: str, lines: list[str], width: int = 118) -> None:
+    for line in _cc_panel(title, lines, width):
+        print(line)
+
+
+def _cc_pair(left_title: str, left_lines: list[str], right_title: str, right_lines: list[str], width: int = 118) -> None:
+    gap = "  "
+    left_w = width // 2 - len(gap) // 2
+    right_w = width - left_w - len(gap)
+    left = _cc_panel(left_title, left_lines, left_w)
+    right = _cc_panel(right_title, right_lines, right_w)
+    rows = max(len(left), len(right))
+    blank_left = " " * left_w
+    blank_right = " " * right_w
+    for idx in range(rows):
+        print((left[idx] if idx < len(left) else blank_left) + gap + (right[idx] if idx < len(right) else blank_right))
+
+
+def _cc_task_card(task: dict) -> str:
+    desc = _cc_truncate(task.get("description", ""), 42)
+    return f"{task['task_id']:<14} {task_priority(task):<2} {task.get('current_phase', 'unknown'):<9} {desc}"
+
+
+def command_center_cmd(args: argparse.Namespace) -> None:
+    collect_state, print_snapshot = _command_center_data_imports()
+    project = getattr(args, "project", None) or None
+    task = getattr(args, "task", None) or None
+    pattern = getattr(args, "pattern", None) or None
+    state = collect_state(
+        args.refresh,
+        selected_project=project,
+        active_task_id=task,
+        pattern_id=pattern,
+        persist_session=bool(getattr(args, "persist_session", False)),
+    )
+    if getattr(args, "json", False):
+        root = str(AGENT_SYSTEM_DIR)
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from dashboard.command_center.json_snapshot import dump_command_center_json
+
+        print(dump_command_center_json(state))
+        return
+    if args.once or not sys.stdout.isatty() or not sys.stdin.isatty():
+        print_snapshot(state)
+        if not args.once and (not sys.stdout.isatty() or not sys.stdin.isatty()):
+            print("Interactive command center needs a TTY; printed snapshot instead.")
+        return
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    try:
+        from dashboard.command_center.app import run_command_center_app
+    except ImportError:
+        die(
+            "Textual is required for the interactive command center. "
+            f"Install: cd {AGENT_SYSTEM_DIR} && python3 -m venv .venv && "
+            ".venv/bin/pip install -r requirements.txt — then run: "
+            ".venv/bin/python bin/spark-flow command-center"
+        )
+
+    run_command_center_app(state, refresh=args.refresh)
+
+
+def run_allowlisted_cmd(args: argparse.Namespace) -> None:
+    """Validate and run browser-allowlisted liaison commands (JSON stdout)."""
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from dashboard.command_center.data import run_allowlisted_liaison_cmd
+
+    cmd = getattr(args, "cmd", "") or ""
+    project = getattr(args, "project", None) or None
+    result = run_allowlisted_liaison_cmd(cmd, project=project)
+    print(json.dumps(result))
+
+
+def reporter_step_advance_browser_cmd(args: argparse.Namespace) -> None:
+    """Opt-in reporter-step advance for web dashboard (JSON stdout)."""
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from dashboard.command_center.data import run_reporter_step_advance_browser
+
+    project = getattr(args, "project", None) or ""
+    task_id = getattr(args, "task_id", None) or None
+    result = run_reporter_step_advance_browser(project, task_id=task_id)
+    print(json.dumps(result))
+
+
+def terminal_session_cmd(args: argparse.Namespace) -> None:
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    _run_terminal_session_action(args)
+
+
+def _run_terminal_session_action(args: argparse.Namespace) -> None:
+    from dashboard.command_center.terminal_sessions import (
+        complete_session,
+        list_sessions,
+        prune_dead_sessions,
+        register_session,
+    )
+    from dashboard.command_center.project_plans import resolve_project_key_and_path
+
+    action = getattr(args, "terminal_session_action", "list")
+    if action == "list":
+        print(json.dumps({"sessions": list_sessions()}))
+        return
+    if action == "prune":
+        print(json.dumps({"sessions": prune_dead_sessions()}))
+        return
+    if action == "register":
+        project_key = getattr(args, "project", None) or ""
+        task_id = getattr(args, "task_id", None) or ""
+        pattern_id = getattr(args, "pattern", None) or ""
+        repo_path = getattr(args, "repo_path", None) or ""
+        if project_key and not repo_path:
+            _, repo_path = resolve_project_key_and_path(project_key)
+        entry = register_session(
+            agent_name=args.agent_name,
+            launch=args.launch,
+            pid=getattr(args, "pid", None),
+            pane_title=getattr(args, "title", "") or args.agent_name,
+            project_key=project_key,
+            repo_path=repo_path,
+            task_id=task_id,
+            pattern_id=pattern_id,
+        )
+        print(json.dumps(entry))
+        return
+    if action == "complete":
+        _run_observe_session_complete(args)
+        return
+    die("Unknown terminal-session action")
+
+
+def observe_session_cmd(args: argparse.Namespace) -> None:
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    action = getattr(args, "observe_session_action", "complete")
+    if action == "complete":
+        _run_observe_session_complete(args)
+        return
+    if action == "start":
+        args.terminal_session_action = "register"
+        if not getattr(args, "agent_name", None):
+            args.agent_name = getattr(args, "agent", None) or "hermes"
+        _run_terminal_session_action(args)
+        return
+    if action == "watch":
+        observe_session_watch_cmd(args)
+        return
+    die("Unknown observe-session action")
+
+
+def _run_observe_session_complete(args: argparse.Namespace) -> None:
+    from dashboard.command_center.terminal_sessions import complete_session
+
+    agent = getattr(args, "agent", None) or getattr(args, "agent_name", None)
+    result = complete_session(
+        session_id=getattr(args, "session_id", None),
+        agent_name=agent,
+        exit_code=getattr(args, "exit_code", None),
+        outcome=getattr(args, "outcome", None),
+        log_excerpt=getattr(args, "log_excerpt", "") or "",
+        log_file=getattr(args, "log_file", None),
+        log_lines=getattr(args, "log_lines", 40),
+        project_key=getattr(args, "project", None) or "",
+        task_id=getattr(args, "task_id", None) or "",
+        attach_file=getattr(args, "attach_file", None),
+        attach_text=getattr(args, "attach_text", None),
+        attach_title=getattr(args, "attach_title", "") or "",
+    )
+    print(json.dumps(result, indent=2))
+
+
+def export_learning_bridge_cmd(args: argparse.Namespace) -> None:
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from dashboard.command_center.learning_bridge import export_learning_bridge
+
+    project = getattr(args, "project", None) or getattr(args, "from_project", None)
+    if not project:
+        die("export-learning-bridge requires --from-project <key>")
+    result = export_learning_bridge(project, dry_run=getattr(args, "dry_run", False))
+    if getattr(args, "json", False) or not result.get("ok"):
+        print(json.dumps(result, indent=2))
+        if not result.get("ok"):
+            raise SystemExit(1)
+        return
+    print(f"Learning bridge updated: {result.get('destination')} ({result.get('appended', 0)} file(s))")
+
+
+def observe_session_watch_cmd(args: argparse.Namespace) -> None:
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from dashboard.command_center.session_watch import watch_session
+
+    log_file = Path(getattr(args, "log_file", "") or "")
+    if not log_file:
+        die("watch requires --log-file PATH")
+    marker = getattr(args, "marker_file", None)
+    result = watch_session(
+        log_file=log_file,
+        agent=getattr(args, "agent", None) or getattr(args, "agent_name", None) or "hermes",
+        project_key=getattr(args, "project", None) or "",
+        task_id=getattr(args, "task_id", None) or "",
+        marker_file=Path(marker) if marker else None,
+        pid=getattr(args, "pid", None),
+        stable_seconds=float(getattr(args, "stable_seconds", 8)),
+        timeout=getattr(args, "timeout", None),
+    )
+    print(json.dumps(result, indent=2))
+
+
+def venture_queue_cmd(args: argparse.Namespace) -> None:
+    root = str(AGENT_SYSTEM_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from dashboard.command_center.terminal_sessions import list_sessions
+    from dashboard.command_center import venture_queue as vq
+
+    action = getattr(args, "venture_queue_action", "list")
+    sessions = list_sessions()
+    if action == "list":
+        print(json.dumps({"items": vq.list_items(), "summary": vq.build_queue_summary(sessions)}))
+        return
+    if action == "add":
+        item = vq.add_item(
+            project_key=args.project,
+            task_id=args.task_id,
+            agent=getattr(args, "agent", "hermes") or "hermes",
+            pattern_id=getattr(args, "pattern", "") or "",
+            engine=getattr(args, "engine", "") or "",
+            priority=getattr(args, "priority", 50),
+        )
+        print(json.dumps(item))
+        return
+    if action == "next":
+        spawn = getattr(args, "spawn", False) or os.environ.get("LIAISON_AUTO_SPAWN", "").strip() in (
+            "1",
+            "true",
+            "yes",
+        )
+        item, msg, hints = vq.pick_next(sessions, spawn=spawn)
+        print(json.dumps({"item": item, "message": msg, "hints": hints, "spawned": bool(hints.get("spawn_result", {}).get("spawned"))}))
+        return
+    if action == "mark-running":
+        item = vq.mark_running(args.item_id)
+        if not item:
+            die(f"Queue item not found: {args.item_id}")
+        print(json.dumps(item))
+        return
+    if action == "mark-done":
+        item = vq.mark_done(args.item_id)
+        if not item:
+            die(f"Queue item not found: {args.item_id}")
+        print(json.dumps(item))
+        return
+    if action == "cancel":
+        item = vq.cancel_item(args.item_id)
+        if not item:
+            die(f"Queue item not found: {args.item_id}")
+        print(json.dumps(item))
+        return
+    die("Unknown venture-queue action")
+
+
+def look_cmd(args: argparse.Namespace) -> None:
+    state = collect_look_state(args.refresh)
+    if args.interactive:
+        if not sys.stdin.isatty():
+            print_look_view(state)
+            print("Interactive look needs a TTY; printed snapshot instead.")
+            return
+        while True:
+            if sys.stdout.isatty():
+                print("\033c", end="")
+            print_look_view(state)
+            command = input("look> ").strip().lower()
+            if command in {"q", "quit", "exit"}:
+                print("Look closed.")
+                return
+            if command in {"r", "refresh"}:
+                state = collect_look_state(True)
+                continue
+            print("Commands: r=refresh, q=quit")
+        return
+    print_look_view(state)
+
+
+def control_panel_state(refresh: bool = False) -> tuple[dict, list[dict]]:
+    if refresh or not latest_recommendations(1):
+        refresh_recommendation_memory(6)
+    return repo_context_evidence(), latest_recommendations(6)
+
+
+def print_control_panel(evidence: dict, options: list[dict], interactive: bool = False) -> None:
+    print("Liaison Control Panel")
+    print(f"Project: {infer_project_summary(evidence)}")
+    print(f"Repo: {evidence['repo']}")
+    print(f"Memory loaded: {'yes' if repo_memory_dir().exists() else 'no'}")
+    print(f"Git status: {evidence['git_status'] or 'clean'}")
+    print()
+    print("Recommended next choices:")
+    for idx, option in enumerate(options, 1):
+        marker = "*" if option["kind"] == "recommended" else " "
+        print(f"{marker} [{idx}] {option['label']} ({option['kind']}, score {option['score']})")
+    print()
+    if interactive:
+        print("Commands: number=details, c<number>=choose, r=refresh, q=quit")
+    else:
+        print(f"Use `{CLI_NAME} control-panel --interactive` for selection, or `{CLI_NAME} choose <number> --show` to record a path.")
+
+
+def print_option_detail(option: dict) -> None:
+    print(f"{option['label']} ({option['kind']}, score {option['score']})")
+    print(f"Why: {option['why']}")
+    print(f"Agents: {', '.join(option['agents'])}")
+    print("Steps:")
+    for idx, step in enumerate(option["steps"], 1):
+        print(f"  {idx}. {step}")
+    print(f"Pivot: {option['pivot']}")
+
+
+def interactive_control_panel(refresh: bool = False) -> None:
+    evidence, options = control_panel_state(refresh)
+    while True:
+        if sys.stdout.isatty():
+            print("\033c", end="")
+        print_control_panel(evidence, options, interactive=True)
+        command = input("panel> ").strip()
+        if command in {"q", "quit", "exit"}:
+            print("Panel closed.")
+            return
+        if command in {"r", "refresh"}:
+            evidence, options = control_panel_state(True)
+            continue
+        if command in {"h", "help", "?"}:
+            print("Enter 1-6 to inspect, c1-c6 to choose, r to refresh, q to quit.")
+            input("Press Enter to continue...")
+            continue
+        choose_now = command.startswith("c") and command[1:].isdigit()
+        value = command[1:] if choose_now else command
+        selected = select_recommendation(options, value)
+        if selected is None:
+            print("Unknown command. Enter h for help.")
+            input("Press Enter to continue...")
+            continue
+        if choose_now:
+            record_choice(selected, "Operator selected this path from the interactive control panel.", show=True)
+            return
+        print()
+        print_option_detail(selected)
+        followup = input("Choose this option? [y/N] ").strip().lower()
+        if followup in {"y", "yes"}:
+            record_choice(selected, "Operator selected this path from the interactive control panel.", show=True)
+            return
+
+
+def control_panel_cmd(args: argparse.Namespace) -> None:
+    if args.interactive:
+        if not sys.stdin.isatty():
+            evidence, options = control_panel_state(args.refresh)
+            print_control_panel(evidence, options, interactive=False)
+            print("Interactive mode needs a TTY; printed the panel instead.")
+            return
+        interactive_control_panel(args.refresh)
+        return
+    evidence, options = control_panel_state(args.refresh)
+    print_control_panel(evidence, options, interactive=False)
+
+def dashboard_cmd(args: argparse.Namespace) -> None:
+    tasks = build_task_index(None)
+    write_task_index(tasks)
+    discovery = discover_projects(None)
+    write_project_discovery(discovery)
+    next_work = build_next_work(discovery, 10)
+    write_next_work(discovery, next_work)
+    trends = build_trends(None)
+    dashboard_dir = AGENT_SYSTEM_DIR / "dashboard"
+    dashboard_dir.mkdir(exist_ok=True)
+    total = len(tasks)
+    closed = sum(1 for item in tasks if item["closed"])
+    open_count = total - closed
+    gate_fail = sum(1 for item in tasks if item["gate_status"] == "fail")
+    unscored = sum(1 for item in tasks if item["score_status"] == "missing")
+    lines = ["# DASHBOARD", "", f"Generated: {now()}", "", "## Task Summary", "", f"- Total tasks: {total}", f"- Open tasks: {open_count}", f"- Closed tasks: {closed}", f"- Gate failures: {gate_fail}", f"- Tasks missing scores: {unscored}", f"- Promoted learnings: {trends['learning_count']}", f"- Trend warnings: {len(trends['candidate_improvements'])}", f"- Projects discovered: {discovery['project_count']}", f"- Generated next-work items: {len(next_work)}", "", "## Attention", ""]
+    attention = []
+    if gate_fail:
+        attention.append(f"{gate_fail} task(s) have failing gates.")
+    if unscored:
+        attention.append(f"{unscored} task(s) do not have artifact scores yet.")
+    attention.extend(item["candidate_improvement"] for item in trends["candidate_improvements"][:10])
+    lines.extend([f"- {item}" for item in attention] or ["- No dashboard warnings."])
+    lines.extend(["", "## References", "", "- `dashboard/TASK_INDEX.md`", "- `dashboard/tasks.json`", "- `dashboard/PROJECTS.md`", "- `dashboard/projects.json`", "- `dashboard/NEXT_WORK.md`", "- `dashboard/next_work.json`", "- `memory/TREND_REPORT.md`", "- `memory/trends.json`"])
+    target = dashboard_dir / "DASHBOARD.md"
+    target.write_text("\n".join(lines) + "\n")
+    write_json(dashboard_dir / "dashboard.json", {"generated_at": now(), "summary": {"total_tasks": total, "open_tasks": open_count, "closed_tasks": closed, "gate_failures": gate_fail, "unscored_tasks": unscored, "promoted_learnings": trends["learning_count"], "trend_warnings": len(trends["candidate_improvements"]), "projects_discovered": discovery["project_count"], "next_work_items": len(next_work)} })
+    if args.show:
+        print(target.read_text())
+    print(f"Dashboard written to: {target}")
+
+def has_passing_validation(td: Path) -> bool:
+    outbox = td / "outbox"
+    if outbox.exists():
+        for path in outbox.glob("test.*.md"):
+            text = path.read_text(errors="replace")
+            if "## Status" in text and "pass" in text.split("## Status", 1)[1][:40].lower():
+                return True
+    validation = td / "VALIDATION.md"
+    if validation.exists() and "(pass)" in validation.read_text(errors="replace"):
+        return True
+    return False
+
+
+def production_readiness_checks(td: Path) -> list[tuple[str, bool, str]]:
+    checks: list[tuple[str, bool, str]] = []
+    deploy_doc = False
+    for candidate in [Path("DEPLOY.md"), Path("docs/DEPLOY.md"), Path("README.md")]:
+        if candidate.exists() and re.search(r"deploy|rollback", candidate.read_text(errors="replace"), re.I):
+            deploy_doc = True
+            break
+    closeout = td / "CLOSEOUT.md"
+    if closeout.exists() and re.search(r"deploy|rollback", closeout.read_text(errors="replace"), re.I):
+        deploy_doc = True
+    checks.append(("deploy_documented", deploy_doc, "Document deploy and rollback in DEPLOY.md, README, or the closeout summary."))
+    secrets_clean = True
+    try:
+        tracked = capture(["git", "ls-files"]).splitlines()
+        secrets_clean = not any(
+            re.search(r"(^|/)\.env($|\.)|(^|/)secrets?\.(json|ya?ml)$", entry) and not entry.endswith(".example")
+            for entry in tracked
+        )
+    except Exception:
+        secrets_clean = True
+    checks.append(("secrets_clean", secrets_clean, "Remove tracked secrets (.env, secrets.*) before MVP."))
+    checks.append(("validation_pass", has_passing_validation(td), f"Record a passing validation with `{CLI_NAME} validate`."))
+    return checks
+
+
+def load_evaluation_rubrics() -> dict[str, dict[str, str]]:
+    path = AGENT_SYSTEM_DIR / "registry" / "evaluations.yaml"
+    rubrics: dict[str, dict[str, str]] = {}
+    if not path.exists():
+        return rubrics
+    current: str | None = None
+    for line in path.read_text(errors="replace").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped == "evaluation_rubrics:":
+            continue
+        if line.startswith("  ") and not line.startswith("    ") and stripped.endswith(":"):
+            current = stripped[:-1]
+            rubrics[current] = {}
+        elif current and line.startswith("    ") and ":" in stripped:
+            key, value = stripped.split(":", 1)
+            rubrics[current][key.strip()] = value.strip().strip('"\'')
+    return rubrics
+
+
+def load_feedback_success_conditions() -> list[str]:
+    path = AGENT_SYSTEM_DIR / "evaluations" / "closed-feedback-loop.yaml"
+    if not path.exists():
+        return []
+    conditions: list[str] = []
+    in_block = False
+    for line in path.read_text(errors="replace").splitlines():
+        stripped = line.strip()
+        if stripped == "success_conditions:":
+            in_block = True
+            continue
+        if in_block:
+            if stripped.startswith("- "):
+                conditions.append(stripped[2:].strip())
+            elif stripped and not line.startswith(" "):
+                break
+    return conditions
+
+
+def gate_checks(include_production: bool = False) -> list[tuple[str, bool, str]]:
+    td = task_dir()
+    checks = []
+    checks.append(("objective", (td / "OBJECTIVES.md").exists() and count_meaningful_entries(td / "OBJECTIVES.md", "## Objective:") > 0, "Record at least one explicit objective with `spark-flow objective`."))
+    checks.append(("context", (td / "CONTEXT.md").exists() and "Snapshot" in (td / "CONTEXT.md").read_text(errors="replace"), "Run `spark-flow snapshot`."))
+    checks.append(("observation", count_meaningful_entries(td / "OBSERVATIONS.md", "## ") > 0, "Record at least one observation with `spark-flow observe`."))
+    checks.append(("evaluation", count_meaningful_entries(td / "EVALUATIONS.md", "## Evaluation:") > 0, "Record at least one evaluation with `spark-flow evaluate`."))
+    checks.append(("approved_or_rejected", any((td / name).exists() and list((td / name).glob("*.md")) for name in ["approved", "rejected"]), "Approve or reject at least one artifact."))
+
+    eval_text = (td / "EVALUATIONS.md").read_text(errors="replace") if (td / "EVALUATIONS.md").exists() else ""
+    has_failed_eval = "- Status: fail" in eval_text
+    has_learning = count_meaningful_entries(td / "LEARNINGS.md", "## Learning:") > 0
+    has_improvement = count_meaningful_entries(td / "IMPROVEMENTS.md", "## Improvement:") > 0
+    checks.append(("failed_eval_learning", (not has_failed_eval) or has_learning, "Failed evaluations require `spark-flow learn`."))
+    checks.append(("learning_improvement", (not has_learning) or has_improvement, "Learnings should create an improvement with `spark-flow improve`."))
+    checks.append(("feedback_cycle", (td / "FEEDBACK_LOOP.md").exists() and "Antifragile review questions" in (td / "FEEDBACK_LOOP.md").read_text(errors="replace"), "Run `spark-flow feedback-cycle`."))
+    scores_file = td / "SCORES.md"
+    score_ok = True
+    score_fix = "Run `spark-flow score-artifacts --show` before closeout for deterministic artifact scoring."
+    if scores_file.exists():
+        score_ok = "Average score:" in scores_file.read_text(errors="replace")
+        score_fix = "Regenerate malformed scores with `spark-flow score-artifacts --show`."
+    checks.append(("artifact_scores", score_ok, score_fix))
+    if include_production:
+        checks.extend(production_readiness_checks(td))
+    return checks
+
+
+def write_gate_report(checks: list[tuple[str, bool, str]]) -> tuple[Path, list[str]]:
+    lines = [f"# GATE REPORT: {current_task_id()}", "", f"Generated: {now()}", ""]
+    failed = []
+    for name, ok, fix in checks:
+        status = "PASS" if ok else "FAIL"
+        lines.append(f"- {status}: {name}")
+        if name == "artifact_scores" and ok and not (task_dir() / "SCORES.md").exists():
+            lines.append("  - Recommendation: Run `spark-flow score-artifacts --show` before closeout for deterministic artifact scoring.")
+        if not ok:
+            lines.append(f"  - Fix: {fix}")
+            failed.append(name)
+    success_conditions = load_feedback_success_conditions()
+    if success_conditions:
+        lines.extend(["", "## Closed-feedback success conditions", ""])
+        lines.extend(f"- {condition}" for condition in success_conditions)
+    target = task_dir() / "GATE_REPORT.md"
+    target.write_text("\n".join(lines) + "\n")
+    return target, failed
+
+
+def gate_cmd(args: argparse.Namespace) -> None:
+    include_production = getattr(args, "production", False) or get_project_phase() == "mvp"
+    checks = gate_checks(include_production=include_production)
+    target, failed = write_gate_report(checks)
+    append_event("gate", command="gate", details={"failed": failed, "target": str(target), "production": include_production})
+    if args.show:
+        print(target.read_text())
+    if failed:
+        print(f"Gate failed: {', '.join(failed)}")
+        raise SystemExit(1)
+    print("Gate passed.")
+
+
+def drift_check_cmd(args: argparse.Namespace) -> None:
+    td = task_dir()
+    objective_text = (td / "OBJECTIVES.md").read_text(errors="replace") if (td / "OBJECTIVES.md").exists() else ""
+    approvals_text = (td / "APPROVALS.md").read_text(errors="replace") if (td / "APPROVALS.md").exists() else ""
+    decisions_text = (td / "DECISIONS.md").read_text(errors="replace") if (td / "DECISIONS.md").exists() else ""
+    outbox_count = len(list((td / "outbox").glob("*.md"))) if (td / "outbox").exists() else 0
+    approved_count = len(list((td / "approved").glob("*.md"))) if (td / "approved").exists() else 0
+
+    findings = []
+    if "## Objective:" not in objective_text:
+        findings.append("No explicit objective beyond the initial task description.")
+    if outbox_count and not approved_count:
+        findings.append("Artifacts exist in outbox but none have been approved.")
+    if approved_count and "## Decision:" not in decisions_text:
+        findings.append("Approved artifacts exist without a durable decision record.")
+    if approved_count and "Approved:" not in approvals_text:
+        findings.append("Approved artifact files exist but APPROVALS.md lacks approval entries.")
+    if not findings:
+        findings.append("No obvious objective drift detected by deterministic checks.")
+
+    report = dedent(f"""\
+        # DRIFT CHECK: {current_task_id()}
+
+        Generated: {now()}
+
+        ## Findings
+
+        {chr(10).join(f"- {item}" for item in findings)}
+
+        ## Limits
+
+        This is a deterministic drift check. Use `spark-flow evaluate --rubric alignment` for judgment-based assessment.
+        """)
+    target = td / "DRIFT_CHECK.md"
+    target.write_text(report)
+    append_event("drift-check", command="drift-check", details={"target": str(target), "findings": findings})
+    if args.show:
+        print(report)
+    if args.fail_on_findings and findings != ["No obvious objective drift detected by deterministic checks."]:
+        raise SystemExit(1)
+    print(f"Drift check written to: {target}")
+
+
+def promote_learning_cmd(args: argparse.Namespace) -> None:
+    td = task_dir()
+    learnings = td / "LEARNINGS.md"
+    if not learnings.exists():
+        die("No LEARNINGS.md found for current task")
+    destination_dir = AGENT_SYSTEM_DIR / "memory"
+    destination_dir.mkdir(exist_ok=True)
+    destination = destination_dir / f"{current_task_id()}.learning.md"
+    content = dedent(f"""\
+        # Promoted learning: {current_task_id()}
+
+        - Promoted at: {now()}
+        - Source repo: `{Path.cwd()}`
+        - Source task: `{td}`
+        - Tags: {args.tags or 'none'}
+
+        ## Learning source
+
+        {learnings.read_text(errors='replace')}
+        """)
+    destination.write_text(content)
+    append_event("promote-learning", command="promote-learning", details={"destination": str(destination), "tags": args.tags})
+    print(f"Learning promoted to: {destination}")
+
+
+def memory_report_cmd(args: argparse.Namespace) -> None:
+    memory_dir = AGENT_SYSTEM_DIR / "memory"
+    files = sorted(memory_dir.glob("*.learning.md")) if memory_dir.exists() else []
+    lines = ["# MEMORY REPORT", "", f"Generated: {now()}", "", f"Promoted learnings: {len(files)}", ""]
+    for path in files[-args.limit:]:
+        text = path.read_text(errors="replace").splitlines()
+        title = text[0] if text else path.name
+        lines.append(f"- `{path.name}`: {title.lstrip('# ').strip()}")
+    report = "\n".join(lines) + "\n"
+    print(report)
+
+
+def registry_cmd(args: argparse.Namespace) -> None:
+    allowed = {"repos", "agents", "skills", "workflows", "artifact-contracts", "phase-routing", "hub-skills", "rolodex", "evaluations"}
+    if args.registry_name not in allowed:
+        die(f"Unknown registry: {args.registry_name}")
+    filename = args.registry_name.replace("-", "_") + ".yaml"
+    path = AGENT_SYSTEM_DIR / "registry" / filename
+    if not path.exists():
+        die(f"Missing registry file: {path}")
+    print(path.read_text())
+
+
+def available_workflows() -> set[str]:
+    names: set[str] = set()
+    workflows_dir = AGENT_SYSTEM_DIR / "workflows"
+    if workflows_dir.exists():
+        for path in workflows_dir.glob("*.yaml"):
+            names.add(path.stem)
+    registry = AGENT_SYSTEM_DIR / "registry" / "workflows.yaml"
+    if registry.exists():
+        for line in registry.read_text(errors="replace").splitlines():
+            stripped = line.strip()
+            if line.startswith("  ") and not line.startswith("    ") and stripped.endswith(":"):
+                names.add(stripped[:-1])
+    return names
+
+
+def annotate_workflow(task_id: str, workflow: str) -> None:
+    brief = task_dir(task_id) / "BRIEF.md"
+    if brief.exists():
+        append_markdown(
+            brief,
+            f"\n## Workflow\n\n- Selected workflow: `{workflow}`\n"
+            f"- Resolve skills: `{CLI_NAME} skills-for {workflow} plan`\n"
+            f"- Workflow definitions: `{CLI_NAME} workflows`\n",
+        )
+
+
+def create_task(task_id: str, description: str, workflow: str | None = None) -> Path:
     ensure_dirs()
-    td = task_dir(args.task_id)
+    td = task_dir(task_id)
     if td.exists():
-        die(f"Task already exists: {args.task_id}")
+        die(f"Task already exists: {task_id}")
 
     CURRENT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CURRENT_FILE.write_text(args.task_id)
+    CURRENT_FILE.write_text(task_id)
 
     td.mkdir(parents=True)
     state = {
-        "TASK_ID": args.task_id,
-        "DESCRIPTION": args.description,
+        "TASK_ID": task_id,
+        "DESCRIPTION": description,
         "CURRENT_PHASE": "plan",
         "CREATED_AT": now(),
         "UPDATED_AT": now(),
@@ -314,12 +3557,127 @@ def init(args: argparse.Namespace) -> None:
         "APPROVED_REVIEW": "0",
         "APPROVED_CLOSE": "0",
     }
-    write_state(state, args.task_id)
-    write_task_files(args.task_id, args.description)
+    if workflow:
+        state["WORKFLOW"] = workflow
+    write_state(state, task_id)
+    write_task_files(task_id, description)
+    write_reporter_files(task_id, description)
+    if workflow:
+        annotate_workflow(task_id, workflow)
+    return td
+
+
+def init(args: argparse.Namespace) -> None:
+    workflow = getattr(args, "workflow", None)
+    if workflow:
+        known = available_workflows()
+        if known and workflow not in known:
+            die(f"Unknown workflow '{workflow}'. Known workflows: {', '.join(sorted(known))}")
+    td = create_task(args.task_id, args.description, workflow)
 
     print(f"Initialized task: {args.task_id}")
     print(f"Task dir: {td}")
-    print("Next: spark-flow start plan")
+    if workflow:
+        print(f"Workflow: {workflow}")
+    print(f"Next: {CLI_NAME} snapshot --show")
+    print(f"Optional executor lane: {CLI_NAME} start plan")
+
+
+def parse_project_agent_patterns() -> list[dict]:
+    """Parse project_agent_patterns from registry/hub_skills.yaml."""
+    path = AGENT_SYSTEM_DIR / "registry" / "hub_skills.yaml"
+    patterns: list[dict] = []
+    if not path.exists():
+        return patterns
+    in_block = False
+    current: dict | None = None
+    in_steps = False
+    for raw in path.read_text(errors="replace").splitlines():
+        stripped = raw.strip()
+        if stripped == "project_agent_patterns:":
+            in_block = True
+            continue
+        if not in_block:
+            continue
+        if not raw.startswith(" ") and stripped.endswith(":"):
+            break
+        if raw.startswith("  - ") and "id:" in stripped:
+            if current:
+                patterns.append(current)
+            current = {"id": stripped.split("id:", 1)[1].strip(), "steps": []}
+            in_steps = False
+        elif current and stripped == "steps:":
+            in_steps = True
+        elif current and in_steps and raw.startswith("      - "):
+            current["steps"].append(stripped[2:].strip().strip('"\''))
+        elif current and ":" in stripped and not stripped.startswith("- "):
+            key, value = stripped.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+            if key in ("agents", "specialists"):
+                current[key] = [item.strip() for item in value.strip("[]").split(",") if item.strip()]
+            else:
+                current[key] = value.strip('"\'')
+            in_steps = False
+    if current:
+        patterns.append(current)
+    return patterns
+
+
+def pattern_agent_chain(pattern: dict) -> list[str]:
+    agents = list(pattern.get("agents", []))
+    for specialist in pattern.get("specialists", []):
+        if specialist not in agents:
+            agents.append(specialist)
+    return agents
+
+
+def start_pattern_cmd(args: argparse.Namespace) -> None:
+    patterns = parse_project_agent_patterns()
+    if args.list or not args.pattern_id:
+        if not patterns:
+            print("No multi-agent patterns found in registry/hub_skills.yaml.")
+            return
+        print("Available multi-agent project patterns:")
+        for pattern in patterns:
+            chain = " -> ".join(pattern_agent_chain(pattern)) or "(no agents)"
+            print(f"- {pattern['id']}: {pattern.get('label', pattern['id'])}")
+            print(f"    chain: {chain}")
+        print(f"\nStart one with: {CLI_NAME} start-pattern <id>")
+        return
+    pattern = next((item for item in patterns if item["id"] == args.pattern_id), None)
+    if not pattern:
+        die(f"Unknown pattern '{args.pattern_id}'. Run `{CLI_NAME} start-pattern --list`.")
+    chain = pattern_agent_chain(pattern)
+    task_id = args.task_id or f"{args.pattern_id}-{datetime.now().strftime('%H%M%S')}"
+    description = args.description or pattern.get("label", args.pattern_id)
+    create_task(task_id, description)
+    td = task_dir(task_id)
+    brief_lines = [
+        "",
+        "## Multi-agent pattern",
+        "",
+        f"- Pattern: `{pattern['id']}` — {pattern.get('label', '')}",
+        f"- When: {pattern.get('when', '')}",
+        f"- Agent chain: {' -> '.join(chain) or '(none)'}",
+        "",
+        "### Expected outbox artifacts",
+        "",
+    ]
+    for agent in chain:
+        brief_lines.append(f"- `{agent}` report → attach with `{CLI_NAME} attach {agent} --file <report.md>`")
+    brief_lines.extend(["", "### Steps", ""])
+    for idx, step in enumerate(pattern.get("steps", []), 1):
+        brief_lines.append(f"{idx}. {step}")
+    brief_lines.extend(["", "### Handoff checklist", ""])
+    for agent in chain:
+        brief_lines.append(f"- [ ] {agent} report attached, reviewed, and approved")
+    append_markdown(td / "BRIEF.md", "\n".join(brief_lines) + "\n")
+    append_markdown(td / "HANDOFFS.md", f"\n## Pattern: {pattern['id']}\n\nChain: {' -> '.join(chain)}\n")
+    print(f"Started pattern '{pattern['id']}' as task: {task_id}")
+    print(f"Agent chain: {' -> '.join(chain)}")
+    if chain:
+        print(f"Next: produce the {chain[0]} report, then `{CLI_NAME} attach {chain[0]} --file <report.md>`")
 
 
 def phase_prompt(phase: str) -> str:
@@ -564,7 +3922,7 @@ def approve(args: argparse.Namespace) -> None:
 
     print(f"Approved phase: {phase}")
     if next_phase:
-        print(f"Next: spark-flow start {next_phase}")
+        print(f"Next: {CLI_NAME} start {next_phase}")
     else:
         print("Workflow complete. Review git diff and commit manually.")
 
@@ -597,7 +3955,7 @@ def reject(args: argparse.Namespace) -> None:
 
     print(f"Rejected phase: {phase}")
     print(f"Feedback written to: {feedback}")
-    print(f"Next: spark-flow start {phase}")
+    print(f"Next: {CLI_NAME} start {phase}")
 
 
 def status(_: argparse.Namespace) -> None:
@@ -645,14 +4003,8 @@ def stop(_: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------
-# Phase 6 control-plane commands
+# Phase 6 control-plane commands (AGENT_SYSTEM_DIR imported at top)
 # ---------------------------------------------------------------------
-
-AGENT_SYSTEM_DIR = Path.home() / "spark/agent-system"
-CONFIG_DIR = AGENT_SYSTEM_DIR / "config"
-WORKFLOWS_DIR = AGENT_SYSTEM_DIR / "workflows"
-CHECKS_DIR = AGENT_SYSTEM_DIR / "checks"
-LOGS_DIR = AGENT_SYSTEM_DIR / "logs"
 
 
 def read_text_if_exists(path: Path) -> str:
@@ -671,7 +4023,7 @@ def extract_yaml_blocks(text: str, parent_key: str) -> dict[str, str]:
     """Small YAML-block extractor for our simple control-plane config files.
 
     This is not a full YAML parser. It is intentionally dependency-free and
-    handles the simple layout used in ~/spark/agent-system/config/model_routes.yaml.
+    handles the simple layout used in $LIAISON_ROOT/config/model_routes.yaml.
     """
     lines = text.splitlines()
     blocks: dict[str, list[str]] = {}
@@ -854,32 +4206,82 @@ def route_cmd(args: argparse.Namespace) -> None:
 
 
 def workflows_cmd(_: argparse.Namespace) -> None:
+    """Single coherent workflow view: declarative YAMLs, registry roles, skill resolution."""
     files = list_yaml_files(WORKFLOWS_DIR)
 
-    print(f"Workflow directory: {WORKFLOWS_DIR}")
+    print(f"Workflow definitions (declarative YAML): {WORKFLOWS_DIR}")
     print()
-
     if not files:
-        print("No workflow YAML files found.")
-        return
+        print("  No workflow YAML files found.")
+    else:
+        for path in files:
+            text = path.read_text()
+            name = ""
+            description = ""
+            for line in text.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("name:"):
+                    name = stripped.split(":", 1)[1].strip()
+                elif stripped.startswith("description:"):
+                    description = stripped.split(":", 1)[1].strip()
+            print(f"- {name or path.stem}: {description}")
+            print(f"  file: {path}")
 
-    for path in files:
-        text = path.read_text()
-        name = ""
-        description = ""
-        for line in text.splitlines():
+    registry_roles = parse_registry_map("workflows.yaml", "workflows")
+    if registry_roles:
+        print()
+        print("Workflow roles (registry/workflows.yaml):")
+        for name, fields in registry_roles.items():
+            print(f"- {name}: {fields.get('role', '—')}")
+
+    skill_resolution = CONFIG_DIR / "skill_resolution.yaml"
+    if skill_resolution.exists():
+        print()
+        print(f"Skill resolution mapping: {skill_resolution}")
+        print(f"  Inspect with `{CLI_NAME} skills` or `{CLI_NAME} skills-for <workflow> <phase>`.")
+
+
+def resolve_validation_script(profile: str) -> Path:
+    """Honor the script: field in validation_profiles.yaml, else checks/<profile>.sh."""
+    profiles_file = CONFIG_DIR / "validation_profiles.yaml"
+    if profiles_file.exists():
+        current: str | None = None
+        for line in profiles_file.read_text(errors="replace").splitlines():
             stripped = line.strip()
-            if stripped.startswith("name:"):
-                name = stripped.split(":", 1)[1].strip()
-            elif stripped.startswith("description:"):
-                description = stripped.split(":", 1)[1].strip()
-        print(f"- {name or path.stem}: {description}")
-        print(f"  file: {path}")
+            if line.startswith("  ") and not line.startswith("    ") and stripped.endswith(":"):
+                current = stripped[:-1]
+            elif current == profile and stripped.startswith("script:"):
+                rel = stripped.split(":", 1)[1].strip().strip('"\'')
+                return (AGENT_SYSTEM_DIR / rel) if not rel.startswith("/") else Path(rel)
+    return CHECKS_DIR / f"{profile}.sh"
+
+
+def repo_default_profile() -> str | None:
+    cwd = Path.cwd().resolve()
+    repos = parse_registry_map("repos.yaml", "repos")
+    for fields in repos.values():
+        raw = fields.get("path")
+        if not raw:
+            continue
+        try:
+            if Path(raw).expanduser().resolve() == cwd:
+                return fields.get("default_profile")
+        except OSError:
+            continue
+    return None
 
 
 def validate_cmd(args: argparse.Namespace) -> None:
-    profile = args.profile
-    script = CHECKS_DIR / f"{profile}.sh"
+    profile = args.profile or repo_default_profile()
+    if not profile:
+        die(f"No --profile given and no default_profile registered for this repo. "
+            f"Pass --profile <name> or register the repo with `{CLI_NAME} register-project`.")
+
+    if profile == "none":
+        print("Validation profile is 'none' (not applicable for this repo). Skipping.")
+        return
+
+    script = resolve_validation_script(profile)
 
     if not script.exists():
         die(f"Missing validation script for profile '{profile}': {script}")
@@ -912,6 +4314,15 @@ def validate_cmd(args: argparse.Namespace) -> None:
             f"## Command\\n\\n`bash {script}`\\n\\n"
             f"## Output\\n\\n```text\\n{output}\\n```\\n"
         )
+        validation_file = td / "VALIDATION.md"
+        if validation_file.exists():
+            append_markdown(
+                validation_file,
+                f"\n## Validation: {profile} ({status})\n\n"
+                f"- Captured: {now()}\n"
+                f"- Summary: `{summary}`\n"
+                f"- Command: `bash {script}`\n"
+            )
         print(f"Validation summary written to: {summary}")
     except Exception:
         pass
@@ -1171,7 +4582,7 @@ def context_cmd(args: argparse.Namespace) -> None:
     # Get skills resolved from skill_resolution.yaml
     skills = resolve_skills_for("python-cli", phase)
     
-    # Get policy files from ~/spark/agent-system/policies/
+    # Get policy files from $LIAISON_ROOT/policies/
     policies = []
     policies_dir = AGENT_SYSTEM_DIR / "policies"
     if policies_dir.exists():
@@ -1271,8 +4682,8 @@ def context_cmd(args: argparse.Namespace) -> None:
         - current task state: {current_state}
         - approved prior outputs
         - handoff file for the phase if present
-        - skill names resolved from ~/spark/agent-system/config/skill_resolution.yaml
-        - relevant policy files from ~/spark/agent-system/policies/
+        - skill names resolved from $LIAISON_ROOT/config/skill_resolution.yaml
+        - relevant policy files from $LIAISON_ROOT/policies/
         - validation summaries from outbox/test.*.md if present
         - required output file path for the phase
         - instruction that chat history is not the source of truth
@@ -2098,13 +5509,103 @@ def check_state_cmd(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Human-in-the-loop DGX Spark agent workflow conductor")
+    parser = argparse.ArgumentParser(
+        prog=CLI_NAME,
+        description="Liaison — human-in-the-loop hub control plane for agents, projects, and phases",
+        epilog="Primary CLI: liaison  |  Backward-compatible alias: spark-flow",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("init")
     p.add_argument("task_id")
     p.add_argument("description")
+    p.add_argument("--workflow", help="Tag the task with a workflow (see `liaison workflows`)")
     p.set_defaults(func=init)
+
+    p = sub.add_parser("register-project", help="Register a repo and init memory (lifecycle: registered, unassessed)")
+    p.add_argument("path")
+    p.add_argument("--name")
+    p.add_argument("--profile", help="Default validation profile (e.g. python, backend, none)")
+    p.add_argument("--role")
+    p.add_argument("--phase", help="Classify immediately to this phase instead of leaving it unassessed")
+    p.set_defaults(func=register_project_cmd)
+
+    p = sub.add_parser("assess-project", help="Inspect repo evidence and recommend a maturity phase")
+    p.add_argument("--show", action="store_true")
+    p.set_defaults(func=assess_project_cmd)
+
+    p = sub.add_parser(
+        "project-intake",
+        help="Score project intake readiness (brief, hygiene, classify) before build",
+    )
+    p.add_argument("--project", metavar="NAME", help="Registered repo key (default: cwd if registered)")
+    p.add_argument("--json", action="store_true", help="Emit JSON on stdout")
+    p.add_argument("--write", action="store_true", help="Write INTAKE_REPORT.md under repo memory")
+    p.add_argument("--show", action="store_true", help="Print full markdown report to stdout")
+    p.set_defaults(func=project_intake_cmd)
+
+    p = sub.add_parser(
+        "plan-project",
+        help="Show or write portfolio operating plan (workflow, pattern, gates)",
+    )
+    p.add_argument("--project", metavar="NAME", help="Registered repo key (default: cwd if registered)")
+    p.add_argument("--json", action="store_true", help="Emit JSON on stdout")
+    p.add_argument("--write", action="store_true", help="Write PROJECT_OPERATING_PLAN.md under repo memory")
+    p.add_argument("--show", action="store_true", help="Print full markdown plan to stdout")
+    p.set_defaults(func=plan_project_cmd)
+
+    p = sub.add_parser(
+        "record-build",
+        help="Record how an agent built the current slice (BUILD_TRACE.md)",
+    )
+    p.add_argument("--agent", required=True, help="Executor or attach source (e.g. hermes, qca)")
+    p.add_argument("--action", required=True, help="What was done in this step")
+    p.add_argument("--outcome", required=True, help="Result or artifact produced")
+    p.add_argument("--notes", default="", help="Optional operator or trace notes")
+    p.set_defaults(func=record_build_cmd)
+
+    p = sub.add_parser(
+        "export-agent-recipe",
+        help="Aggregate build corpus into an exportable agent recipe",
+    )
+    p.add_argument(
+        "--from-project",
+        "--project",
+        dest="project",
+        metavar="NAME",
+        help="Registered repo key (default: cwd if registered)",
+    )
+    p.add_argument("--task-id", dest="task_id", help="Limit export to one task slice")
+    p.add_argument("--recipe-id", dest="recipe_id", help="Output recipe id (default: project-pattern-date)")
+    p.add_argument("--write", action="store_true", help="Write registry/recipes/<id>.md and index entry")
+    p.add_argument("--json", action="store_true", help="Emit JSON on stdout")
+    p.add_argument("--show", action="store_true", help="Print recipe markdown to stdout")
+    p.set_defaults(func=export_agent_recipe_cmd)
+
+    p = sub.add_parser(
+        "export-learning-bridge",
+        help="Append promoted learnings digest to repo .spark-flow/memory/hermes_hints.md",
+    )
+    p.add_argument("--from-project", "--project", dest="project", metavar="NAME", required=True)
+    p.add_argument("--dry-run", action="store_true", help="Preview without writing")
+    p.add_argument("--json", action="store_true", help="Emit JSON on stdout")
+    p.set_defaults(func=export_learning_bridge_cmd)
+
+    p = sub.add_parser("project-phase", help="Show, classify, set, or advance the project phase")
+    p.add_argument("action", choices=["show", "classify", "set", "advance"])
+    p.add_argument("phase", nargs="?", help="Target phase for `set`/`classify`")
+    p.add_argument("--from-assessment", dest="from_assessment", action="store_true", help="Classify using the recommended phase from assess-project")
+    p.add_argument("--reason")
+    p.add_argument("--note")
+    p.add_argument("--yes", action="store_true", help="Confirm `advance` non-interactively")
+    p.set_defaults(func=project_phase_cmd)
+
+    p = sub.add_parser("start-pattern", help="Scaffold a task from a multi-agent project pattern")
+    p.add_argument("pattern_id", nargs="?")
+    p.add_argument("--task-id", dest="task_id")
+    p.add_argument("--description")
+    p.add_argument("--list", action="store_true", help="List available patterns")
+    p.set_defaults(func=start_pattern_cmd)
 
     p = sub.add_parser("start")
     p.add_argument("phase", choices=PHASES)
@@ -2139,7 +5640,7 @@ def main() -> None:
     p.set_defaults(func=workflows_cmd)
 
     p = sub.add_parser("validate")
-    p.add_argument("--profile", required=True)
+    p.add_argument("--profile", help="Validation profile; defaults to the repo's registered default_profile")
     p.set_defaults(func=validate_cmd)
 
     p = sub.add_parser("budget")
@@ -2210,6 +5711,317 @@ def main() -> None:
 
     p = sub.add_parser("check-state")
     p.set_defaults(func=check_state_cmd)
+
+
+    p = sub.add_parser("snapshot")
+    p.add_argument("--show", action="store_true")
+    p.set_defaults(func=snapshot_cmd)
+
+    p = sub.add_parser("attach")
+    p.add_argument("agent")
+    p.add_argument("--file")
+    p.add_argument("--text")
+    p.add_argument("--title")
+    p.set_defaults(func=attach_cmd)
+
+    p = sub.add_parser("approve-artifact")
+    p.add_argument("artifact")
+    p.add_argument("--note")
+    p.set_defaults(func=approve_artifact_cmd)
+
+    p = sub.add_parser("reject-artifact")
+    p.add_argument("artifact")
+    p.add_argument("reason")
+    p.set_defaults(func=reject_artifact_cmd)
+
+    p = sub.add_parser("decision")
+    p.add_argument("text")
+    p.set_defaults(func=decision_cmd)
+
+    p = sub.add_parser("close-task")
+    p.add_argument("--summary")
+    p.add_argument("--require-gate", dest="require_gate", action="store_true", help="Require a passing gate and validation before closing")
+    p.set_defaults(func=close_task_cmd)
+
+    p = sub.add_parser(
+        "reporter-step",
+        help="Reporter checklist step machine (init → snapshot → attach → approve → validate → close)",
+    )
+    p.add_argument("action", choices=["show", "set", "advance"])
+    p.add_argument("step", nargs="?", help="Step id for set (init, snapshot, attach, approve, validate, close)")
+    p.add_argument("--task-id", dest="task_id", help="Task id (default: current task)")
+    p.add_argument(
+        "--complete",
+        action="store_true",
+        help="With set: mark the step complete in reporter_step_state.json",
+    )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="With advance: move to next step even if current step is not complete",
+    )
+    p.set_defaults(func=reporter_step_cmd)
+
+
+    p = sub.add_parser("objective")
+    p.add_argument("text")
+    p.add_argument("--metric")
+    p.set_defaults(func=objective_cmd)
+
+    p = sub.add_parser("observe")
+    p.add_argument("source")
+    p.add_argument("--file")
+    p.add_argument("--text")
+    p.add_argument("--title")
+    p.set_defaults(func=observe_cmd)
+
+    p = sub.add_parser("evaluate")
+    p.add_argument("text")
+    p.add_argument("--rubric", default="alignment")
+    p.add_argument("--score", type=int, required=True)
+    p.add_argument("--pass-score", type=int, default=3)
+    p.set_defaults(func=evaluate_cmd)
+
+    p = sub.add_parser("learn")
+    p.add_argument("text")
+    p.set_defaults(func=learn_cmd)
+
+    p = sub.add_parser("improve")
+    p.add_argument("text")
+    p.add_argument("--priority")
+    p.add_argument("--owner")
+    p.set_defaults(func=improve_cmd)
+
+    p = sub.add_parser("feedback-cycle")
+    p.add_argument("--show", action="store_true")
+    p.set_defaults(func=feedback_cycle_cmd)
+
+
+    p = sub.add_parser("score-artifacts")
+    p.add_argument("--show", action="store_true")
+    p.add_argument("--fail-under", type=float)
+    p.set_defaults(func=score_artifacts_cmd)
+
+    p = sub.add_parser("trend-report")
+    p.add_argument("--show", action="store_true")
+    p.add_argument("--limit", type=int)
+    p.set_defaults(func=trend_report_cmd)
+
+    p = sub.add_parser("index-tasks")
+    p.add_argument("--repo")
+    p.add_argument("--show", action="store_true")
+    p.set_defaults(func=index_tasks_cmd)
+
+    p = sub.add_parser("discover-projects")
+    p.add_argument("--repo")
+    p.add_argument("--show", action="store_true")
+    p.set_defaults(func=discover_projects_cmd)
+
+    p = sub.add_parser("plan-next")
+    p.add_argument("--repo")
+    p.add_argument("--limit", type=int, default=10)
+    p.add_argument("--show", action="store_true")
+    p.add_argument("--init", action="store_true", help="Initialize a task from the top next-work item")
+    p.add_argument("--task-id", dest="task_id")
+    p.set_defaults(func=plan_next_cmd)
+
+    p = sub.add_parser("memory-init")
+    p.add_argument("--show", action="store_true")
+    p.set_defaults(func=memory_init_cmd)
+
+    p = sub.add_parser("debrief")
+    p.add_argument("--show", action="store_true")
+    p.add_argument("--limit", type=int, default=6)
+    p.set_defaults(func=debrief_cmd)
+
+    p = sub.add_parser("recommend")
+    p.add_argument("--show", action="store_true")
+    p.add_argument("--limit", type=int, default=6)
+    p.set_defaults(func=recommend_cmd)
+
+    p = sub.add_parser("choose")
+    p.add_argument("option")
+    p.add_argument("--reason")
+    p.add_argument("--show", action="store_true")
+    p.add_argument("--init", action="store_true", help="Initialize the next task from the chosen option")
+    p.add_argument("--task-id", dest="task_id")
+    p.set_defaults(func=choose_cmd)
+
+    p = sub.add_parser("control-panel")
+    p.add_argument("--refresh", action="store_true")
+    p.add_argument("--interactive", action="store_true")
+    p.set_defaults(func=control_panel_cmd)
+
+    p = sub.add_parser("command-center", help="Multi-panel Liaison command center TUI")
+    p.add_argument("--refresh", action="store_true")
+    p.add_argument("--once", action="store_true", help="Print snapshot and exit (for smoke tests and CI)")
+    p.add_argument("--json", action="store_true", help="Print JSON state and exit (web dashboard, CI)")
+    p.add_argument("--project", metavar="NAME", help="Focus state on one registered project/repo key")
+    p.add_argument("--task", metavar="TASK_ID", help="Active task id for focused project")
+    p.add_argument("--pattern", metavar="PATTERN_ID", help="Active hub pattern id")
+    p.add_argument(
+        "--persist-session",
+        action="store_true",
+        help="Write operator_session.json under focused project repo",
+    )
+    p.set_defaults(func=command_center_cmd)
+
+    p = sub.add_parser(
+        "run-allowlisted",
+        help="Validate and run browser-allowlisted liaison commands (JSON on stdout)",
+    )
+    p.add_argument("--cmd", required=True, help="Full liaison command string")
+    p.add_argument("--project", metavar="NAME", help="Registered repo key for init allowlist")
+    p.set_defaults(func=run_allowlisted_cmd)
+
+    p = sub.add_parser(
+        "reporter-step-advance-browser",
+        help="Opt-in reporter-step advance for web dashboard (JSON on stdout)",
+    )
+    p.add_argument("--project", required=True, metavar="NAME", help="Registered repo key")
+    p.add_argument("--task-id", dest="task_id", metavar="TASK_ID", help="Open task id")
+    p.set_defaults(func=reporter_step_advance_browser_cmd)
+
+    p = sub.add_parser("look")
+    p.add_argument("--refresh", action="store_true")
+    p.add_argument("--interactive", action="store_true")
+    p.set_defaults(func=look_cmd)
+
+    p = sub.add_parser("tui", help="Open Liaison command center (alias for command-center)")
+    p.add_argument("--refresh", action="store_true")
+    p.add_argument("--once", action="store_true")
+    p.add_argument("--json", action="store_true", help="Print JSON state and exit")
+    p.add_argument("--project", metavar="NAME", help="Focus state on one registered project")
+    p.add_argument("--task", metavar="TASK_ID", help="Active task id for focused project")
+    p.add_argument("--pattern", metavar="PATTERN_ID", help="Active hub pattern id")
+    p.add_argument("--persist-session", action="store_true", help="Write operator_session.json")
+    p.set_defaults(func=command_center_cmd)
+
+    p_ts = sub.add_parser("terminal-session", help="Register/list terminal agent sessions")
+    p_ts_sub = p_ts.add_subparsers(dest="terminal_session_action", required=True)
+    p_ts_list = p_ts_sub.add_parser("list", help="List sessions (prunes dead PIDs)")
+    p_ts_list.set_defaults(func=terminal_session_cmd)
+    p_ts_prune = p_ts_sub.add_parser("prune", help="Remove dead sessions")
+    p_ts_prune.set_defaults(func=terminal_session_cmd)
+    p_ts_reg = p_ts_sub.add_parser("register", help="Register a spawned session")
+    p_ts_reg.add_argument("--agent-name", required=True)
+    p_ts_reg.add_argument("--launch", required=True)
+    p_ts_reg.add_argument("--pid", type=int, default=None)
+    p_ts_reg.add_argument("--title", default="")
+    p_ts_reg.add_argument("--project", metavar="NAME", help="Registry project key")
+    p_ts_reg.add_argument("--task-id", metavar="TASK_ID", help="Bound venture task id")
+    p_ts_reg.add_argument("--pattern", metavar="PATTERN_ID", help="Hub pattern id")
+    p_ts_reg.add_argument("--repo-path", help="Repo path (auto from --project if omitted)")
+    p_ts_reg.set_defaults(func=terminal_session_cmd)
+    p_ts_done = p_ts_sub.add_parser("complete", help="End session and record executor outcome")
+    p_ts_done.add_argument("--session-id", help="Terminal session id")
+    p_ts_done.add_argument("--agent-name", help="Agent name (running session)")
+    p_ts_done.add_argument("--agent", help="Alias for --agent-name")
+    p_ts_done.add_argument("--exit-code", type=int, default=None)
+    p_ts_done.add_argument("--outcome", choices=["success", "failure", "unknown"])
+    p_ts_done.add_argument("--log-excerpt", default="")
+    p_ts_done.add_argument("--log-file", help="Read tail from log file")
+    p_ts_done.add_argument("--log-lines", type=int, default=40)
+    p_ts_done.add_argument("--project", metavar="NAME")
+    p_ts_done.add_argument("--task-id", metavar="TASK_ID")
+    p_ts_done.add_argument("--attach-file", metavar="PATH")
+    p_ts_done.add_argument("--attach-text")
+    p_ts_done.add_argument("--attach-title", default="")
+    p_ts_done.set_defaults(func=terminal_session_cmd, terminal_session_action="complete")
+
+    p_obs = sub.add_parser("observe-session", help="Start or complete executor sessions (execution bridge)")
+    p_obs_sub = p_obs.add_subparsers(dest="observe_session_action", required=True)
+    p_obs_start = p_obs_sub.add_parser("start", help="Register venture-bound terminal session")
+    p_obs_start.add_argument("--agent", default="hermes")
+    p_obs_start.add_argument("--agent-name", help="Alias for --agent")
+    p_obs_start.add_argument("--launch", required=True)
+    p_obs_start.add_argument("--pid", type=int, default=None)
+    p_obs_start.add_argument("--title", default="")
+    p_obs_start.add_argument("--project", metavar="NAME")
+    p_obs_start.add_argument("--task-id", metavar="TASK_ID")
+    p_obs_start.add_argument("--pattern", metavar="PATTERN_ID")
+    p_obs_start.set_defaults(func=observe_session_cmd, terminal_session_action="register")
+    p_obs_done = p_obs_sub.add_parser("complete", help="Record session outcome to task artifacts")
+    p_obs_done.add_argument("--session-id")
+    p_obs_done.add_argument("--agent")
+    p_obs_done.add_argument("--agent-name")
+    p_obs_done.add_argument("--exit-code", type=int, default=None)
+    p_obs_done.add_argument("--outcome", choices=["success", "failure", "unknown"])
+    p_obs_done.add_argument("--log-excerpt", default="")
+    p_obs_done.add_argument("--log-file")
+    p_obs_done.add_argument("--log-lines", type=int, default=40)
+    p_obs_done.add_argument("--project", metavar="NAME")
+    p_obs_done.add_argument("--task-id", metavar="TASK_ID")
+    p_obs_done.add_argument("--attach-file", metavar="PATH", help="Attach report file to outbox after recording outcome")
+    p_obs_done.add_argument("--attach-text", help="Attach inline report text to outbox after recording outcome")
+    p_obs_done.add_argument("--attach-title", default="", help="Title for attach artifact")
+    p_obs_done.set_defaults(func=observe_session_cmd, observe_session_action="complete")
+    p_obs_watch = p_obs_sub.add_parser("watch", help="Tail log file and complete session on exit or stability")
+    p_obs_watch.add_argument("--log-file", required=True, help="Log file to tail and attach on complete")
+    p_obs_watch.add_argument("--agent", default="hermes")
+    p_obs_watch.add_argument("--agent-name", help="Alias for --agent")
+    p_obs_watch.add_argument("--project", metavar="NAME")
+    p_obs_watch.add_argument("--task-id", metavar="TASK_ID")
+    p_obs_watch.add_argument("--marker-file", help="Optional marker file; contents may be exit code")
+    p_obs_watch.add_argument("--pid", type=int, help="Optional process PID to watch for exit")
+    p_obs_watch.add_argument("--stable-seconds", type=float, default=8.0, help="Log mtime/size stable window")
+    p_obs_watch.add_argument("--timeout", type=float, default=None, help="Max watch duration in seconds")
+    p_obs_watch.set_defaults(func=observe_session_cmd, observe_session_action="watch")
+
+    p_vq = sub.add_parser("venture-queue", help="Lightweight cross-project venture queue")
+    p_vq_sub = p_vq.add_subparsers(dest="venture_queue_action", required=True)
+    p_vq_list = p_vq_sub.add_parser("list")
+    p_vq_list.set_defaults(func=venture_queue_cmd)
+    p_vq_add = p_vq_sub.add_parser("add", help="Enqueue a venture")
+    p_vq_add.add_argument("--project", required=True)
+    p_vq_add.add_argument("--task-id", required=True)
+    p_vq_add.add_argument("--agent", default="hermes")
+    p_vq_add.add_argument("--pattern", default="")
+    p_vq_add.add_argument("--engine", default="")
+    p_vq_add.add_argument("--priority", type=int, default=50)
+    p_vq_add.set_defaults(func=venture_queue_cmd)
+    p_vq_next = p_vq_sub.add_parser("next", help="Next pending item if capacity allows")
+    p_vq_next.add_argument(
+        "--spawn",
+        action="store_true",
+        help="Spawn tmux/wezterm session when TERMINAL_BRIDGE allows (also LIAISON_AUTO_SPAWN=1)",
+    )
+    p_vq_next.set_defaults(func=venture_queue_cmd, venture_queue_action="next")
+    p_vq_mr = p_vq_sub.add_parser("mark-running")
+    p_vq_mr.add_argument("item_id")
+    p_vq_mr.set_defaults(func=venture_queue_cmd, venture_queue_action="mark-running")
+    p_vq_md = p_vq_sub.add_parser("mark-done")
+    p_vq_md.add_argument("item_id")
+    p_vq_md.set_defaults(func=venture_queue_cmd, venture_queue_action="mark-done")
+    p_vq_cancel = p_vq_sub.add_parser("cancel")
+    p_vq_cancel.add_argument("item_id")
+    p_vq_cancel.set_defaults(func=venture_queue_cmd, venture_queue_action="cancel")
+
+    p = sub.add_parser("dashboard")
+    p.add_argument("--show", action="store_true")
+    p.set_defaults(func=dashboard_cmd)
+
+    p = sub.add_parser("gate")
+    p.add_argument("--show", action="store_true")
+    p.add_argument("--production", action="store_true", help="Include MVP production-readiness checks")
+    p.set_defaults(func=gate_cmd)
+
+    p = sub.add_parser("drift-check")
+    p.add_argument("--show", action="store_true")
+    p.add_argument("--fail-on-findings", action="store_true")
+    p.set_defaults(func=drift_check_cmd)
+
+    p = sub.add_parser("promote-learning")
+    p.add_argument("--tags")
+    p.set_defaults(func=promote_learning_cmd)
+
+    p = sub.add_parser("memory-report")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=memory_report_cmd)
+
+    p = sub.add_parser("registry")
+    p.add_argument("registry_name", choices=["repos", "agents", "skills", "workflows", "artifact-contracts", "phase-routing", "hub-skills", "rolodex", "evaluations"])
+    p.set_defaults(func=registry_cmd)
 
     args = parser.parse_args()
     args.func(args)

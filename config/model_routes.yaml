@@ -76,6 +76,25 @@ remote_models:
     requires_human_approval: true
     edits_files: false
 
+  nemotron_ultra_550b:
+    provider: nvidia_nim
+    model: nvidia/nemotron-3-ultra-550b-a55b
+    agent: claude
+    use_for:
+      - architecture_review
+      - deep_repo_analysis
+      - high_level_planning
+      - complex_agent_tasks
+      - strategic_reasoning
+    trigger_tags:
+      - "#planning"
+      - "#architecture"
+      - "#deep_analysis"
+      - "#strategic"
+    requires_human_approval: true
+    edits_files: false
+    notes: Best free flagship-style planner/reasoner. ~55B active params, 550B total.
+
 quantum_models:
   ising_calibration:
     provider: nvidia_nim

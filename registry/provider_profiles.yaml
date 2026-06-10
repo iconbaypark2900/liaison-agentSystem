@@ -1,0 +1,20 @@
+version: 1
+# Machine-scoped model provider defaults for Liaison / Hermes routing.
+# API keys belong in ~/.hermes/.env only — never commit secrets here.
+# See: docs/local-agents/liaison/guides/multi-machine.md
+
+machines:
+  dgx_spark:
+    role: gpu_execution
+    default_provider: ollama
+    endpoint: http://127.0.0.1:11434
+    agents: [hermes, ml_intern, unsloth_studio]
+    notes: Local inference default; NIM optional via Hermes
+
+  evo_x2:
+    role: orchestration_staging
+    default_provider: api
+    providers: [openrouter, nvidia_nim, anthropic]
+    env_keys: [OPENROUTER_API_KEY, NVIDIA_API_KEY, ANTHROPIC_API_KEY]
+    agents: [hermes]
+    notes: API-first; keys in ~/.hermes/.env only — never commit

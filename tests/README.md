@@ -10,6 +10,26 @@ From the repository root:
 
 ```bash
 ./tests/smoke_spark_flow.sh
+./tests/run_smoke.sh
 ```
 
-This verifies `bin/spark-flow --help` exits successfully (CLI wiring and interpreter).
+`run_smoke.sh` runs key Python modules via their `if __name__ == "__main__"` entry points (no pytest required).
+
+## Individual tests
+
+Run any module directly:
+
+```bash
+python3 tests/test_venture_queue.py
+python3 tests/test_execution_bridge.py
+python3 tests/test_project_intake.py
+python3 tests/test_command_center_data.py
+```
+
+With pytest installed (`pip install -r requirements.txt`):
+
+```bash
+pytest tests/test_*.py
+```
+
+This verifies CLI wiring, venture queue, execution bridge, and command-center data helpers.

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Liaison — primary CLI entry (spark-flow remains a backward-compatible alias).
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "${ROOT}/spark-flow" "$@"

@@ -1,0 +1,122 @@
+# EVO-X2 project registry fragment (L6).
+# Paths use planned EVO root /home/roc/... until liaison-migration clone completes.
+# DGX paths for the same repos may differ; see DGX_LIAISON_PROJECT_REGISTRY.yaml.
+# CLI: liaison registry repos --machine evo-x2 (when flag exists); else use this file.
+
+version: 1
+machine: evo_x2
+status: planned
+layer: L6
+generated: "2026-05-31"
+count: 6
+projects:
+  - project: docuQuery
+    org: creatorsByChoice
+    path: /home/roc/creatorsByChoice/docuQuery
+    branch: master
+    remote: ""
+    remote_status: no_remote
+    maturity_phase: prototype
+    runtime: mixed
+    default_profile: none
+    machine_role: evo_primary
+    validation:
+      commands: []
+    liaison:
+      recommended_agents: [hermes, codex]
+      patterns: [python-cli]
+    next_actions:
+      - Clone to EVO-X2 via liaison-migration kit
+      - Register with liaison register-project after clone
+
+  - project: materialScience
+    org: quantumGlobalGroup
+    path: /home/roc/quantumGlobalGroup/materialScience
+    branch: feature/mqai-docs-and-dashboard
+    remote: https://github.com/iconbaypark2900/materialScience.git
+    remote_status: has_remote
+    maturity_phase: prototype
+    runtime: mixed
+    default_profile: none
+    machine_role: dual
+    notes: Also on DGX Spark; DGX owns GPU workloads; EVO for docs/dashboard orchestration
+    validation:
+      commands: []
+    liaison:
+      recommended_agents: [hermes, codex]
+      patterns: [python-cli]
+    next_actions:
+      - Confirm dual-machine ownership (DGX GPU vs EVO orchestration)
+      - Clone or pull on EVO-X2 when SSH available
+
+  - project: research
+    org: quantumGlobalGroup
+    path: /home/roc/quantumGlobalGroup/research
+    branch: main
+    remote: https://github.com/iconbaypark2900/research.git
+    remote_status: has_remote
+    maturity_phase: prototype
+    runtime: python
+    default_profile: none
+    machine_role: evo_primary
+    validation:
+      commands: []
+    liaison:
+      recommended_agents: [hermes, codex]
+      patterns: [python-cli]
+    next_actions:
+      - Clone to EVO-X2 via liaison-migration kit
+
+  - project: autoresearch
+    org: research
+    path: /home/roc/research/autoresearch
+    branch: master
+    remote: https://github.com/karpathy/autoresearch.git
+    remote_status: has_remote
+    maturity_phase: prototype
+    runtime: python
+    default_profile: none
+    machine_role: evo_primary
+    validation:
+      commands: []
+    liaison:
+      recommended_agents: [hermes, ml_intern]
+      patterns: [python-cli]
+    next_actions:
+      - Clone to EVO-X2; API eval workloads route via Hermes on EVO
+
+  - project: polymarket_calculator
+    org: jabCreative
+    path: /home/roc/jabCreative/polymarket_calculator
+    branch: main
+    remote: https://github.com/rocketdriver2025/polymarket_calculator.git
+    remote_status: has_remote
+    maturity_phase: prototype
+    runtime: python
+    default_profile: none
+    machine_role: evo_primary
+    validation:
+      commands: []
+    liaison:
+      recommended_agents: [hermes, codex]
+      patterns: [python-cli]
+    next_actions:
+      - Clone to EVO-X2; API-heavy eval candidate for cross-machine pilot
+
+  - project: polymarket_btc
+    org: jabCreative
+    path: /home/roc/jabCreative/polymarket_btc
+    branch: main
+    remote: https://github.com/iconbaypark2900/polymarket_btc.git
+    remote_status: has_remote
+    maturity_phase: prototype
+    runtime: python
+    default_profile: none
+    machine_role: evo_primary
+    validation:
+      commands: []
+    liaison:
+      recommended_agents: [hermes, codex]
+      patterns: [python-cli]
+    next_actions:
+      - Clone to EVO-X2; API-heavy eval candidate for cross-machine pilot
