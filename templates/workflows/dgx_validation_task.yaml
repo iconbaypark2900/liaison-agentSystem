@@ -1,0 +1,9 @@
+id: dgx-validation-template
+project: hybrid_qml_kg
+type: validation
+status: backlog
+safety:
+  production_allowed: false
+  customer_release_allowed: false
+  live_allowed: false
+  requires_human_approval: true

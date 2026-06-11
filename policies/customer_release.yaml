@@ -1,0 +1,19 @@
+version: 0.2.0
+customer_release:
+  customer_release_allowed_by_default: false
+  required_before_customer_release:
+  - install_verified
+  - tests_pass
+  - docs_updated
+  - security_review_pass
+  - data_quality_review_pass
+  - privacy_review_present
+  - user_risk_disclosure_present
+  - support_or_rollback_plan_present
+  - human_approval_present
+  forbidden:
+  - unreviewed_customer_data_use
+  - missing_privacy_notes
+  - missing_risk_disclosure
+  - missing_validation_evidence
+  - agent_self_approval

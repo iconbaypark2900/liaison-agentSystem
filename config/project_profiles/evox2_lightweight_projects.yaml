@@ -1,0 +1,198 @@
+version: 0.2.0
+profile_id: evox2_lightweight_projects
+workstation: evox2_windows
+display_name: EVO-X2 Windows Lightweight Projects
+summary:
+  active_project_count: 23
+  profile_type: lightweight_operator_app_projects
+  primary_role: Operator-side app development, Windows/Cursor workflows, UI/backend projects, utilities, and human review
+  production_allowed_by_default: false
+  customer_release_allowed_by_default: false
+  live_allowed_by_default: false
+  requires_human_approval: true
+projects:
+- docuQuery
+- parkSafe
+- predictEdgeapi
+- rewardSync
+- brightCommons
+- printCost
+- nautiWatch
+- orbTrack
+- event-market-alpha-evolved
+- setup
+- ag_news_nlp_project
+- co2_predictions
+- b2b_revenue_procurement_network
+- cipherChat
+- fractalVoyager
+- bioLock
+- docuchainVerify
+- chainStoreipfs
+- synthoCast
+- privanon
+- skySightanalyzer
+- guardianShield
+- qids
+workstation_defaults:
+  default_host: evox2_windows
+  preferred_executor: codex
+  fallback_executor: opencode
+  default_model_route: local_coder
+  fallback_model_route: local_planner
+  default_worker_mode: run_once
+  daemon_allowed: false
+  max_concurrent_tasks: 1
+  branch_format: agent/<project>/<task-id>/evox2
+resource_assumptions:
+  hardware_class: EVO-X2 Windows
+  intended_for:
+  - operator_cockpit
+  - librechat_ui
+  - cursor_workflows
+  - light_local_models
+  - app_development
+  avoid_for:
+  - production_approval
+  - live_trading
+  - unbounded_daemon
+routing_rules:
+  default:
+    preferred_host: evox2_windows
+    fallback_host: dgx_spark
+    default_model_route: local_coder
+    fallback_model_route: local_planner
+    allow_hosted_fallback: false
+    requires_human_approval: true
+  code_patch:
+    preferred_host: evox2_windows
+    fallback_host: dgx_spark
+    model_route: local_coder
+    executor: codex
+    allow_hosted_fallback: true
+    requires_budget: true
+    requires_human_approval_above_usd: 0.25
+  calibration:
+    preferred_host: evox2_windows
+    fallback_host: null
+    model_route: local_critic
+    executor: shell
+    allow_hosted_fallback: false
+    required_gates:
+    - confidence_calibration
+    - fabricated_edge_detection
+validation_defaults:
+  required_profiles:
+  - security
+  - docs
+  recommended_profiles:
+  - node
+  - python
+  - config
+  optional_profiles:
+  - rag_eval
+  - frontend_next_fastapi
+  - calibration
+  - compliance
+  - customer_release
+  - research_evidence
+project_class_validation: {}
+safety_gates:
+  default:
+  - agent_safety
+  - production_readiness
+  customer_facing:
+  - agent_safety
+  - customer_release
+  - production_readiness
+  trading_or_prediction:
+  - agent_safety
+  - confidence_calibration
+  - production_readiness
+  security_or_privacy:
+  - agent_safety
+  - customer_release
+  - production_readiness
+task_generation_priorities:
+  first_batch:
+  - docuQuery
+  - guardianShield
+  - event-market-alpha-evolved
+  priority_order:
+    critical: []
+    high: []
+    medium: []
+    low: []
+  default_task_sequence:
+  - project_audit
+  - repo_status
+  - validation_inventory
+  - security_scan
+  - release_gap_analysis
+  - evidence_debrief
+artifact_expectations:
+  required_for_every_task:
+  - task.yaml
+  - context.md
+  - command.txt
+  - stdout.log
+  - stderr.log
+  - patch.diff
+  - validation.log
+  - security.log
+  - data_quality.log
+  - compliance.md
+  - debrief.md
+  - promotion_gate.json
+  - run_metadata.json
+exclusions:
+  merge_sources_excluded:
+  - lexFind
+  - qRandomizer
+  - chainCheck
+  - cyberSentinel
+  - mediScope
+  - finGuard
+  - qOptiSolve
+  archives_excluded:
+  - Grain
+  - razorBill
+  - tradeFluxsimulator
+  - trendy
+  - brsuite
+  - crm
+  - questionnaire
+  forbidden_default_actions:
+  - production_deploy
+  - customer_release
+  - live_trade
+  - capital_allocation
+  - push_main
+  - force_push
+  - read_secrets
+  - disable_gates
+  - approve_own_work
+  - auto_merge
+  - auto_restore
+  - auto_delete
+  forbidden_default_paths:
+  - .env
+  - .env.*
+  - secrets/**
+  - credentials/**
+  - customer_data/**
+  - prod_dumps/**
+  - '*.pem'
+  - '*.key'
+  - id_rsa
+  - id_ed25519
+  - .cursor/**
+promotion_policy:
+  production_allowed: false
+  customer_release_allowed: false
+  live_allowed: false
+  requires_human_approval: true
+  default_gate_status: review_required
+  missing_evidence_status: blocked
+  security_failure_status: blocked
+  calibration_failure_status: blocked

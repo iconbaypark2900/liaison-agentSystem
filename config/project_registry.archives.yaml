@@ -1,0 +1,246 @@
+version: 0.2.0
+registry_type: archives
+summary:
+  archive_project_count: 7
+  count_as_active_projects: false
+  active_automation_allowed: false
+  worker_allowed_by_default: false
+  restore_allowed_by_default: false
+  auto_delete_allowed: false
+  human_review_required: true
+  production_allowed_by_default: false
+  customer_release_allowed_by_default: false
+  live_allowed_by_default: false
+defaults:
+  enabled: true
+  active: false
+  archived: true
+  count_as_active_project: false
+  worker_allowed: false
+  restore_allowed: false
+  auto_restore_allowed: false
+  auto_delete_allowed: false
+  standalone_promotion_allowed: false
+  requires_human_approval: true
+  default_task_type: archive_review
+  default_executor: shell
+  default_model_route: local_planner
+  validation_profiles:
+  - docs
+  - security
+  safety_gates:
+  - agent_safety
+  - production_readiness
+  forbidden_actions:
+  - push_main
+  - force_push
+  - deploy_production
+  - live_trade
+  - allocate_capital
+  - read_secrets
+  - delete_archive
+  - restore_without_approval
+  - approve_own_work
+  - disable_gates
+archives:
+  Grain:
+    enabled: true
+    active: false
+    archived: true
+    project: Grain
+    status: archived
+    category: archived_project
+    tags:
+    - archive
+    - inactive
+    count_as_active_project: false
+    worker_allowed: false
+    restore_allowed: false
+    auto_restore_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: archive_review
+      title: Review Grain archive status
+      allowed_only_with_human_approval: true
+      required_outputs:
+      - archive_inventory.md
+      - restore_recommendation.md
+      - debrief.md
+      - promotion_gate.json
+  razorBill:
+    enabled: true
+    active: false
+    archived: true
+    project: razorBill
+    status: archived
+    category: archived_project
+    tags:
+    - archive
+    - inactive
+    count_as_active_project: false
+    worker_allowed: false
+    restore_allowed: false
+    auto_restore_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: archive_review
+      title: Review razorBill archive status
+      allowed_only_with_human_approval: true
+      required_outputs:
+      - archive_inventory.md
+      - restore_recommendation.md
+      - debrief.md
+      - promotion_gate.json
+  tradeFluxsimulator:
+    enabled: true
+    active: false
+    archived: true
+    project: tradeFluxsimulator
+    status: archived_dirty_intentionally_untouched
+    category: archived_project
+    tags:
+    - archive
+    - inactive
+    count_as_active_project: false
+    worker_allowed: false
+    restore_allowed: false
+    auto_restore_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: archive_review
+      title: Review tradeFluxsimulator archive status
+      allowed_only_with_human_approval: true
+      required_outputs:
+      - archive_inventory.md
+      - restore_recommendation.md
+      - debrief.md
+      - promotion_gate.json
+  trendy:
+    enabled: true
+    active: false
+    archived: true
+    project: trendy
+    status: archived_or_restore_later
+    category: archived_project
+    tags:
+    - archive
+    - inactive
+    count_as_active_project: false
+    worker_allowed: false
+    restore_allowed: false
+    auto_restore_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: archive_review
+      title: Review trendy archive status
+      allowed_only_with_human_approval: true
+      required_outputs:
+      - archive_inventory.md
+      - restore_recommendation.md
+      - debrief.md
+      - promotion_gate.json
+  brsuite:
+    enabled: true
+    active: false
+    archived: true
+    project: brsuite
+    status: archived
+    category: archived_project
+    tags:
+    - archive
+    - inactive
+    count_as_active_project: false
+    worker_allowed: false
+    restore_allowed: false
+    auto_restore_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: archive_review
+      title: Review brsuite archive status
+      allowed_only_with_human_approval: true
+      required_outputs:
+      - archive_inventory.md
+      - restore_recommendation.md
+      - debrief.md
+      - promotion_gate.json
+  crm:
+    enabled: true
+    active: false
+    archived: true
+    project: crm
+    status: archived
+    category: archived_project
+    tags:
+    - archive
+    - inactive
+    count_as_active_project: false
+    worker_allowed: false
+    restore_allowed: false
+    auto_restore_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: archive_review
+      title: Review crm archive status
+      allowed_only_with_human_approval: true
+      required_outputs:
+      - archive_inventory.md
+      - restore_recommendation.md
+      - debrief.md
+      - promotion_gate.json
+  questionnaire:
+    enabled: true
+    active: false
+    archived: true
+    project: questionnaire
+    status: archived
+    category: archived_project
+    tags:
+    - archive
+    - inactive
+    count_as_active_project: false
+    worker_allowed: false
+    restore_allowed: false
+    auto_restore_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: archive_review
+      title: Review questionnaire archive status
+      allowed_only_with_human_approval: true
+      required_outputs:
+      - archive_inventory.md
+      - restore_recommendation.md
+      - debrief.md
+      - promotion_gate.json
+rules:
+  active_counting:
+    count_as_active_projects: false
+  automation:
+    worker_allowed_by_default: false
+    allow_task_generation: true
+    allowed_task_types:
+    - archive_review
+    - restore_review
+    - archive_inventory
+    - restore_plan
+  restore_policy:
+    automatic_restore_allowed: false
+    require_human_review: true
+    require_archive_inventory: true
+    require_restore_recommendation: true
+    require_validation_plan: true
+    require_promotion_gate: true
+    default_gate_status: review_required
+    restored_projects_must_move_to_active_registry_manually: true
+  promotion_policy:
+    standalone_promotion_allowed: false
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true

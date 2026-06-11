@@ -1,0 +1,10 @@
+version: 0.2.0
+worker:
+  default_mode: run_once
+  max_concurrent_tasks: 1
+  daemon:
+    enabled: false
+    interval_seconds: 1800
+    max_concurrent_tasks: 1
+artifact_root: .liaison/runs
+task_queue_root: .liaison/tasks

@@ -1,0 +1,142 @@
+# Liaison v0.2.0 Release gap review Task Template
+id: "{{project_id}}-release-gap-001"
+project: "{{project_id}}"
+title: "Release gap review for {{project_id}}"
+type: "release_review"
+priority: "{{priority | default('medium')}}"
+status: backlog
+created_at: "{{created_at}}"
+updated_at: "{{updated_at}}"
+
+repo:
+  path: "{{project_path}}"
+  branch:
+    create: false
+    name: null
+
+routing:
+  preferred_host: "{{default_host}}"
+  model_route: "{{default_model_route}}"
+  executor: "{{preferred_executor}}"
+  fallback_executor: "{{fallback_executor}}"
+
+allowed_executors:
+  - shell
+  - opencode
+  - codex
+  - claude_code
+
+allowed_actions:
+  - read_docs
+  - inspect_repo
+  - run_validation
+  - write_artifacts
+  - write_debrief
+
+forbidden_actions:
+  - push_main
+  - force_push
+  - deploy_production
+  - customer_release
+  - live_trade
+  - allocate_capital
+  - read_secrets
+  - modify_credentials
+  - delete_history
+  - approve_own_work
+  - disable_gates
+
+allowed_files:
+  - "README.md"
+  - "AGENTS.md"
+  - "VALIDATION.md"
+  - "COMPLIANCE.md"
+  - "RELEASE_GATES.md"
+  - "docs/**"
+  - "src/**"
+  - "app/**"
+  - "backend/**"
+  - "frontend/**"
+  - "tests/**"
+  - "scripts/**"
+  - "config/**"
+  - "package.json"
+  - "pyproject.toml"
+  - "requirements*.txt"
+
+forbidden_files:
+  - ".env"
+  - ".env.*"
+  - "secrets/**"
+  - "credentials/**"
+  - "customer_data/**"
+  - "prod_dumps/**"
+  - "*.pem"
+  - "*.key"
+  - "id_rsa"
+  - "id_ed25519"
+  - ".cursor/**"
+
+validation:
+  - name: git_status
+    command: "git status --short"
+    required: true
+  - name: inventory
+    command: "find . -maxdepth 3 -type f | head -100"
+    required: false
+
+required_artifacts:
+  - task.yaml
+  - context.md
+  - command.txt
+  - stdout.log
+  - stderr.log
+  - patch.diff
+  - validation.log
+  - security.log
+  - data_quality.log
+  - compliance.md
+  - debrief.md
+  - promotion_gate.json
+  - run_metadata.json
+
+optional_artifacts: []
+
+debrief_required_sections:
+  - Summary
+  - Commands run
+  - Evidence artifacts
+  - Risks
+  - Recommended next tasks
+  - Promotion recommendation
+
+done_when:
+  - "validation.log is written."
+  - "debrief.md is written."
+  - "promotion_gate.json is written."
+  - "No production/customer/live approval is granted."
+
+safety:
+  production_allowed: false
+  customer_release_allowed: false
+  live_allowed: false
+  capital_allocation_allowed: false
+  requires_human_approval: true
+  default_gate_status: review_required
+  missing_evidence_status: blocked
+
+release_gap_checklist:
+  required_before_customer_release:
+    - install_verified
+    - tests_pass
+    - docs_updated
+    - security_review_pass
+    - privacy_review_present
+    - human_approval_present
+  required_before_production:
+    - tests_pass
+    - lint_pass
+    - typecheck_pass
+    - security_scan_pass
+    - rollback_plan_present
+    - human_approval_present

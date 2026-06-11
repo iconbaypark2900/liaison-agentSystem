@@ -1,0 +1,14 @@
+version: 0.2.0
+operator_preferences:
+  cursor_plans:
+    do_not_modify_attached_plan_file: true
+    use_existing_todos: true
+    mark_todos_in_progress_instead_of_recreating: true
+  worktrees:
+    prefer_consolidation_into_primary_clone: true
+  git_hygiene:
+    do_not_publish_cursor_dir: true
+    if_cursor_dir_committed: git rm -r --cached .cursor
+  implementation_style:
+    prefer_extending_existing_structure: true
+    create_reviewable_artifacts: true
