@@ -1,0 +1,1351 @@
+version: 0.2.0
+portfolio:
+  active_project_count: 41
+  dgx_active_count: 18
+  evox2_active_count: 23
+  merge_sources_excluded: 7
+  archive_candidates_excluded: 7
+  production_allowed_by_default: false
+  customer_release_allowed_by_default: false
+  live_allowed_by_default: false
+  requires_human_approval: true
+defaults:
+  dgx_spark:
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: dgx_heavy_coder
+    fallback_model_route: local_critic
+    worker_mode: run_once
+    daemon_allowed: false
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  evox2_windows:
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    fallback_model_route: local_planner
+    worker_mode: run_once
+    daemon_allowed: false
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+projects:
+  clinical-suite:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/creatorsByChoice/clinical-suite
+    category: Clinical / medical document processing
+    priority: high
+    tags:
+    - clinical
+    - medical
+    - document_processing
+    - healthcare
+    - privacy
+    - compliance
+    - rag
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: local_critic
+    validation_profiles:
+    - python
+    - data_quality
+    - security
+    - compliance
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  adaptive-graph-rag:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/creatorsByChoice/adaptive-graph-rag
+    category: Graph RAG
+    priority: high
+    tags:
+    - rag
+    - graph
+    - retrieval
+    - embeddings
+    - evals
+    - knowledge_graph
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: dgx_heavy_coder
+    validation_profiles:
+    - python
+    - rag_eval
+    - data_quality
+    - security
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  quantumRX:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/creatorsByChoice/quantumRX
+    category: Quantum / biomedical
+    priority: high
+    tags:
+    - quantum
+    - biomedical
+    - qml
+    - medical
+    - research
+    - privacy
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: dgx_heavy_coder
+    validation_profiles:
+    - python
+    - data_quality
+    - security
+    - compliance
+    - research_evidence
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  sigma:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/quantumGlobalGroup/sigma
+    category: Trading intelligence
+    priority: critical
+    tags:
+    - trading
+    - event_market
+    - prediction
+    - calibration
+    - finance
+    - confidence
+    - risk
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: local_critic
+    validation_profiles:
+    - python
+    - calibration
+    - data_quality
+    - security
+    safety_gates:
+    - agent_safety
+    - confidence_calibration
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  materialScience:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/quantumGlobalGroup/materialScience
+    category: Materials discovery / MQAI
+    priority: high
+    tags:
+    - materials
+    - physical_ai
+    - mqai
+    - quantum
+    - simulation
+    - research
+    - gpu
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: dgx_heavy_coder
+    validation_profiles:
+    - python
+    - data_quality
+    - research_evidence
+    - config
+    safety_gates:
+    - agent_safety
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  hybrid-qml-kg-poc:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/quantumGlobalGroup/hybrid-qml-kg-poc
+    category: Hybrid QML + knowledge graph
+    priority: high
+    tags:
+    - quantum
+    - qml
+    - knowledge_graph
+    - biomedical
+    - hetionet
+    - link_prediction
+    - dgx
+    - gpu
+    - research
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: dgx_heavy_coder
+    validation_profiles:
+    - python
+    - data_quality
+    - research_evidence
+    - config
+    - frontend_next_fastapi
+    safety_gates:
+    - agent_safety
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  qgg_quantum_dispatch:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/quantumGlobalGroup/qgg_quantum_dispatch
+    category: Quantum dispatch / showcase
+    priority: high
+    tags:
+    - quantum
+    - dispatch
+    - showcase
+    - qgg
+    - platform
+    - education
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: dgx_heavy_coder
+    validation_profiles:
+    - python
+    - docs
+    - security
+    - config
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  qcrypt-rng:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/quantumGlobalGroup/qcrypt-rng
+    category: Quantum RNG / security
+    priority: high
+    tags:
+    - quantum
+    - cryptography
+    - rng
+    - security
+    - privacy
+    - qids
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: local_critic
+    validation_profiles:
+    - python
+    - security
+    - config
+    - docs
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  qgq-platform:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/quantumGlobalGroup/qgq-platform
+    category: QGG platform
+    priority: high
+    tags:
+    - qgg
+    - platform
+    - quantum
+    - web
+    - business
+    - product
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: dgx_heavy_coder
+    validation_profiles:
+    - node
+    - python
+    - security
+    - docs
+    - customer_release
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  biomedical:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/quantumGlobalGroup/biomedical
+    category: Biomedical ML/QML
+    priority: high
+    tags:
+    - biomedical
+    - qml
+    - ml
+    - healthcare
+    - privacy
+    - research
+    - clinical
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: dgx_heavy_coder
+    validation_profiles:
+    - python
+    - data_quality
+    - security
+    - compliance
+    - research_evidence
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  quantum-practitioner-lab:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/quantumGlobalGroup/quantum_practitioner_lab/quantum-practitioner-lab
+    category: Quantum education / lab
+    priority: medium
+    tags:
+    - quantum
+    - education
+    - lab
+    - qiskit
+    - tutorials
+    - docs
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: local_coder
+    validation_profiles:
+    - python
+    - docs
+    - security
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  quantum-hybrid-portfolio:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/quantumGlobalGroup/quantum-hybrid-portfolio
+    category: Portfolio optimization
+    priority: high
+    tags:
+    - quantum
+    - portfolio
+    - optimization
+    - finance
+    - risk
+    - calibration
+    - research
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: local_critic
+    validation_profiles:
+    - python
+    - calibration
+    - data_quality
+    - security
+    - research_evidence
+    safety_gates:
+    - agent_safety
+    - confidence_calibration
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  qgg_research:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/quantumGlobalGroup/qgg_research
+    category: Research hub
+    priority: medium
+    tags:
+    - research
+    - qgg
+    - quantum
+    - docs
+    - evidence
+    - knowledge_base
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: local_planner
+    validation_profiles:
+    - docs
+    - research_evidence
+    - config
+    safety_gates:
+    - agent_safety
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  financial_alpha_risk_research_lab:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/dataScience/financial_alpha_risk_research_lab
+    category: Financial risk / alpha
+    priority: critical
+    tags:
+    - finance
+    - alpha
+    - risk
+    - trading
+    - prediction
+    - calibration
+    - research
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: local_critic
+    validation_profiles:
+    - python
+    - calibration
+    - data_quality
+    - security
+    - research_evidence
+    safety_gates:
+    - agent_safety
+    - confidence_calibration
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  medical_evidence_graph_outcomes_lab:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/dataScience/medical_evidence_graph_outcomes_lab
+    category: Medical evidence graph
+    priority: high
+    tags:
+    - medical
+    - evidence_graph
+    - healthcare
+    - clinical
+    - graph
+    - privacy
+    - compliance
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: dgx_heavy_coder
+    validation_profiles:
+    - python
+    - data_quality
+    - security
+    - compliance
+    - research_evidence
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  quantum_hybrid_research_optimization_lab:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/dataScience/quantum_hybrid_research_optimization_lab
+    category: Quantum-hybrid optimization
+    priority: high
+    tags:
+    - quantum
+    - hybrid
+    - optimization
+    - research
+    - qml
+    - gpu
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: dgx_heavy_coder
+    validation_profiles:
+    - python
+    - research_evidence
+    - data_quality
+    - config
+    safety_gates:
+    - agent_safety
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  secure_ai_data_governance_control_plane:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/dataScience/secure_ai_data_governance_control_plane
+    category: Secure AI governance
+    priority: high
+    tags:
+    - secure_ai
+    - governance
+    - data_governance
+    - compliance
+    - privacy
+    - security
+    - control_plane
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: local_critic
+    validation_profiles:
+    - python
+    - security
+    - compliance
+    - data_quality
+    - docs
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  tokenized_infra_rwa_intel_platform:
+    enabled: true
+    active: true
+    workstation: dgx_spark
+    path: /home/iconbaypark2900/dataScience/tokenized_infra_rwa_intel_platform
+    category: RWA intelligence
+    priority: high
+    tags:
+    - rwa
+    - tokenization
+    - infrastructure
+    - intelligence
+    - finance
+    - compliance
+    - research
+    default_host: dgx_spark
+    preferred_executor: opencode
+    fallback_executor: shell
+    default_model_route: local_critic
+    validation_profiles:
+    - python
+    - data_quality
+    - security
+    - compliance
+    - research_evidence
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    - confidence_calibration
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  docuQuery:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/creatorsByChoice/docuQuery
+    category: Document/RAG app
+    priority: high
+    tags:
+    - document
+    - rag
+    - search
+    - retrieval
+    - app
+    - customer_facing
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    validation_profiles:
+    - python
+    - node
+    - rag_eval
+    - security
+    - customer_release
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  parkSafe:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/creatorsByChoice/parkSafe
+    category: Lightweight app
+    priority: medium
+    tags:
+    - app
+    - lightweight
+    - safety
+    - utility
+    - web
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    validation_profiles:
+    - node
+    - security
+    - docs
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  predictEdgeapi:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/creatorsByChoice/predictEdgeapi
+    category: API/backend
+    priority: high
+    tags:
+    - api
+    - backend
+    - prediction
+    - scoring
+    - data
+    - calibration
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_critic
+    validation_profiles:
+    - python
+    - data_quality
+    - security
+    - calibration
+    safety_gates:
+    - agent_safety
+    - confidence_calibration
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  rewardSync:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/creatorsByChoice/rewardSync
+    category: Business/integration
+    priority: medium
+    tags:
+    - business
+    - integration
+    - rewards
+    - api
+    - automation
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    validation_profiles:
+    - node
+    - python
+    - security
+    - customer_release
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  brightCommons:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/jabCreative/ecommerce/brightCommons
+    category: E-commerce
+    priority: medium
+    tags:
+    - ecommerce
+    - web
+    - customer_facing
+    - business
+    - payments_sensitive
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    validation_profiles:
+    - node
+    - security
+    - customer_release
+    - frontend_next_fastapi
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  printCost:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/jabCreative/portfolio/printCost
+    category: Standalone utility
+    priority: medium
+    tags:
+    - utility
+    - calculator
+    - pricing
+    - creative_portfolio
+    - lightweight
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    validation_profiles:
+    - node
+    - docs
+    - security
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  nautiWatch:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/jabCreative/portfolio/nautiWatch
+    category: Dashboard/tracking
+    priority: medium
+    tags:
+    - dashboard
+    - tracking
+    - creative_portfolio
+    - web
+    - lightweight
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    validation_profiles:
+    - node
+    - docs
+    - security
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  orbTrack:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/jabCreative/portfolio/orbTrack
+    category: Dashboard/tracking
+    priority: medium
+    tags:
+    - dashboard
+    - tracking
+    - orbit
+    - geospatial
+    - web
+    - lightweight
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    validation_profiles:
+    - node
+    - docs
+    - security
+    - data_quality
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  event-market-alpha-evolved:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/jabCreative/event-market-alpha-evolved
+    category: Event-market app
+    priority: critical
+    tags:
+    - event_market
+    - trading
+    - prediction
+    - calibration
+    - finance
+    - paper_trading
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_critic
+    validation_profiles:
+    - python
+    - calibration
+    - data_quality
+    - security
+    safety_gates:
+    - agent_safety
+    - confidence_calibration
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  setup:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/jabCreative/setup
+    category: Setup/tooling
+    priority: medium
+    tags:
+    - setup
+    - tooling
+    - developer_experience
+    - automation
+    - scripts
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    validation_profiles:
+    - shell_diagnostic
+    - docs
+    - security
+    safety_gates:
+    - agent_safety
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  ag_news_nlp_project:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/dataScience/schoolWork/ag_news_nlp_project
+    category: School/NLP project
+    priority: low
+    tags:
+    - nlp
+    - school
+    - classification
+    - data_science
+    - ml
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    validation_profiles:
+    - python
+    - data_quality
+    - docs
+    safety_gates:
+    - agent_safety
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  co2_predictions:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/dataScience/schoolWork/co2_predictions
+    category: School prediction project
+    priority: low
+    tags:
+    - prediction
+    - data_science
+    - school
+    - climate
+    - co2
+    - calibration
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_critic
+    validation_profiles:
+    - python
+    - data_quality
+    - calibration
+    - docs
+    safety_gates:
+    - agent_safety
+    - confidence_calibration
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  b2b_revenue_procurement_network:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/dataScience/b2b_revenue_procurement_network
+    category: B2B/procurement network
+    priority: high
+    tags:
+    - b2b
+    - procurement
+    - revenue
+    - marketplace
+    - business
+    - network
+    - customer_facing
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    validation_profiles:
+    - python
+    - node
+    - data_quality
+    - security
+    - customer_release
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  cipherChat:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/tradeSecretsInitiative/cipherChat
+    category: Secure messaging
+    priority: high
+    tags:
+    - secure_messaging
+    - privacy
+    - encryption
+    - communication
+    - security
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_critic
+    validation_profiles:
+    - node
+    - python
+    - security
+    - compliance
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  fractalVoyager:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/tradeSecretsInitiative/fractalVoyager
+    category: Incubation candidate
+    priority: low
+    tags:
+    - incubation
+    - creative_tech
+    - visualization
+    - experiment
+    - lightweight
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_planner
+    validation_profiles:
+    - docs
+    - node
+    - security
+    safety_gates:
+    - agent_safety
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  bioLock:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/tradeSecretsInitiative/bioLock
+    category: Privacy/security
+    priority: high
+    tags:
+    - biometrics
+    - privacy
+    - security
+    - identity
+    - compliance
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_critic
+    validation_profiles:
+    - node
+    - python
+    - security
+    - compliance
+    - customer_release
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  docuchainVerify:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/tradeSecretsInitiative/docuchainVerify
+    category: Document verification
+    priority: high
+    tags:
+    - document_verification
+    - blockchain
+    - integrity
+    - security
+    - compliance
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_critic
+    validation_profiles:
+    - node
+    - python
+    - security
+    - customer_release
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  chainStoreipfs:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/tradeSecretsInitiative/chainStoreipfs
+    category: IPFS/blockchain storage
+    priority: medium
+    tags:
+    - ipfs
+    - blockchain
+    - storage
+    - decentralized
+    - security
+    - data
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    validation_profiles:
+    - node
+    - security
+    - data_quality
+    - docs
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  synthoCast:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/tradeSecretsInitiative/synthoCast
+    category: Incubation candidate
+    priority: low
+    tags:
+    - incubation
+    - synthetic_media
+    - content
+    - ai
+    - lightweight
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_planner
+    validation_profiles:
+    - docs
+    - node
+    - security
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  privanon:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/tradeSecretsInitiative/privanon
+    category: Privacy app
+    priority: high
+    tags:
+    - privacy
+    - anonymization
+    - security
+    - compliance
+    - data_protection
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_critic
+    validation_profiles:
+    - node
+    - python
+    - security
+    - compliance
+    - data_quality
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  skySightanalyzer:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/tradeSecretsInitiative/skySightanalyzer
+    category: Geospatial/satellite
+    priority: high
+    tags:
+    - geospatial
+    - satellite
+    - imagery
+    - computer_vision
+    - data
+    - analytics
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_coder
+    validation_profiles:
+    - python
+    - data_quality
+    - security
+    - docs
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  guardianShield:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/tradeSecretsInitiative/guardianShield
+    category: Security platform
+    priority: high
+    tags:
+    - security
+    - platform
+    - monitoring
+    - protection
+    - compliance
+    - guardian
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_critic
+    validation_profiles:
+    - node
+    - python
+    - security
+    - compliance
+    - customer_release
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true
+  qids:
+    enabled: true
+    active: true
+    workstation: evox2_windows
+    path: /home/roc/tradeSecretsInitiative/qids
+    category: QIDS ecosystem
+    priority: critical
+    tags:
+    - qids
+    - quantum
+    - privacy
+    - secure_data
+    - data_systems
+    - blockchain
+    - cryptography
+    - platform
+    default_host: evox2_windows
+    preferred_executor: codex
+    fallback_executor: opencode
+    default_model_route: local_critic
+    validation_profiles:
+    - python
+    - node
+    - security
+    - compliance
+    - docs
+    safety_gates:
+    - agent_safety
+    - customer_release
+    - production_readiness
+    status: active
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true

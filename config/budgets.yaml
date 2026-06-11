@@ -1,0 +1,21 @@
+version: 0.2.0
+budgets:
+  global:
+    daily_max_usd: 5.0
+    monthly_max_usd: 25.0
+    require_approval_above_usd: 0.25
+task_type_budgets:
+  summarize:
+    max_cost_usd: 0.0
+    allow_hosted: false
+  code_patch:
+    max_cost_usd: 0.5
+    allow_hosted: true
+  calibration:
+    max_cost_usd: 0.0
+    allow_hosted: false
+    requires_human_approval: true
+  trading_or_capital_related:
+    max_cost_usd: 0.0
+    allow_hosted: false
+    requires_human_approval: true

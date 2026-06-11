@@ -1,0 +1,10 @@
+paper_build:
+  description: Optional paper build validation profile for research projects.
+  checks:
+  - name: latex_full_build
+    command: cd docs && pdflatex paper_qGG_full_2026
+    required: false
+    severity: review_required
+  - name: figure_generation_note
+    type: note
+    message: Figures may need regeneration before paper submission.

@@ -1,0 +1,22 @@
+version: 0.2.0
+hosts:
+  evox2_windows:
+    role: operator_cockpit
+    services:
+      ollama:
+        url: http://localhost:11434
+      litellm:
+        url: http://localhost:4000
+      librechat:
+        url: http://localhost:3080
+  dgx_spark:
+    role: heavy_compute
+    services:
+      ollama:
+        url: http://dgx-spark.local:11434
+      vllm:
+        url: http://dgx-spark.local:8000/v1
+      sglang:
+        url: http://dgx-spark.local:8001/v1
+      nim:
+        url: http://dgx-spark.local:8002/v1

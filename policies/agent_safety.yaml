@@ -1,0 +1,17 @@
+version: 0.2.0
+agent_safety:
+  production_allowed_by_default: false
+  customer_release_allowed_by_default: false
+  live_allowed_by_default: false
+  requires_human_approval: true
+  forbidden_actions:
+  - push_main
+  - force_push
+  - deploy_production
+  - customer_release
+  - live_trade
+  - allocate_capital
+  - read_secrets
+  - modify_credentials
+  - approve_own_work
+  - disable_gates

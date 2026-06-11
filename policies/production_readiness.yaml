@@ -1,0 +1,18 @@
+version: 0.2.0
+production_readiness:
+  production_allowed_by_default: false
+  required_before_production:
+  - tests_pass
+  - lint_pass
+  - typecheck_pass
+  - security_scan_pass
+  - dependency_scan_pass
+  - docs_updated
+  - rollback_plan_present
+  - human_approval_present
+  forbidden:
+  - agent_self_approval
+  - missing_validation_log
+  - missing_promotion_gate
+  - direct_deploy_by_agent
+  - direct_push_to_main

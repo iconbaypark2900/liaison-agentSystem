@@ -1,0 +1,16 @@
+frontend_next_fastapi:
+  description: Validate Next.js browser env and FastAPI origin alignment.
+  checks:
+  - name: next_public_api_url_present
+    type: env_required
+    env: NEXT_PUBLIC_API_URL
+    required: false
+    severity: review_required
+  - name: api_origin_present
+    type: env_required
+    env: API_ORIGIN
+    required: false
+    severity: review_required
+  - name: env_alignment_note
+    type: note
+    message: NEXT_PUBLIC_API_URL and API_ORIGIN should point to the same FastAPI base during local dev.

@@ -1,0 +1,192 @@
+version: 0.2.0
+profile_id: dgx_compute_projects
+workstation: dgx_spark
+display_name: DGX Spark Compute Projects
+summary:
+  active_project_count: 18
+  profile_type: compute_heavy
+  primary_role: NVIDIA compute, heavy inference, RAG indexing, QML/ML research, data-quality scans
+  production_allowed_by_default: false
+  customer_release_allowed_by_default: false
+  live_allowed_by_default: false
+  requires_human_approval: true
+projects:
+- clinical-suite
+- adaptive-graph-rag
+- quantumRX
+- sigma
+- materialScience
+- hybrid-qml-kg-poc
+- qgg_quantum_dispatch
+- qcrypt-rng
+- qgq-platform
+- biomedical
+- quantum-practitioner-lab
+- quantum-hybrid-portfolio
+- qgg_research
+- financial_alpha_risk_research_lab
+- medical_evidence_graph_outcomes_lab
+- quantum_hybrid_research_optimization_lab
+- secure_ai_data_governance_control_plane
+- tokenized_infra_rwa_intel_platform
+workstation_defaults:
+  default_host: dgx_spark
+  preferred_executor: opencode
+  fallback_executor: shell
+  default_model_route: dgx_heavy_coder
+  fallback_model_route: local_critic
+  default_worker_mode: run_once
+  daemon_allowed: false
+  max_concurrent_tasks: 1
+  branch_format: agent/<project>/<task-id>/dgx
+resource_assumptions:
+  hardware_class: NVIDIA DGX Spark
+  intended_for:
+  - local_heavy_models
+  - validation
+  - rag_indexing
+  - research
+  avoid_for:
+  - production_approval
+  - live_trading
+  - unbounded_daemon
+routing_rules:
+  default:
+    preferred_host: dgx_spark
+    fallback_host: evox2_windows
+    default_model_route: dgx_heavy_coder
+    fallback_model_route: local_critic
+    allow_hosted_fallback: false
+    requires_human_approval: true
+  code_patch:
+    preferred_host: dgx_spark
+    fallback_host: evox2_windows
+    model_route: dgx_heavy_coder
+    executor: opencode
+    allow_hosted_fallback: true
+    requires_budget: true
+    requires_human_approval_above_usd: 0.25
+  calibration:
+    preferred_host: dgx_spark
+    fallback_host: null
+    model_route: local_critic
+    executor: shell
+    allow_hosted_fallback: false
+    required_gates:
+    - confidence_calibration
+    - fabricated_edge_detection
+validation_defaults:
+  required_profiles:
+  - security
+  - docs
+  recommended_profiles:
+  - python
+  - data_quality
+  - config
+  optional_profiles:
+  - rag_eval
+  - frontend_next_fastapi
+  - calibration
+  - compliance
+  - customer_release
+  - research_evidence
+project_class_validation: {}
+safety_gates:
+  default:
+  - agent_safety
+  - production_readiness
+  customer_facing:
+  - agent_safety
+  - customer_release
+  - production_readiness
+  trading_or_prediction:
+  - agent_safety
+  - confidence_calibration
+  - production_readiness
+  security_or_privacy:
+  - agent_safety
+  - customer_release
+  - production_readiness
+task_generation_priorities:
+  first_batch:
+  - clinical-suite
+  - adaptive-graph-rag
+  - sigma
+  priority_order:
+    critical: []
+    high: []
+    medium: []
+    low: []
+  default_task_sequence:
+  - project_audit
+  - repo_status
+  - validation_inventory
+  - security_scan
+  - release_gap_analysis
+  - evidence_debrief
+artifact_expectations:
+  required_for_every_task:
+  - task.yaml
+  - context.md
+  - command.txt
+  - stdout.log
+  - stderr.log
+  - patch.diff
+  - validation.log
+  - security.log
+  - data_quality.log
+  - compliance.md
+  - debrief.md
+  - promotion_gate.json
+  - run_metadata.json
+exclusions:
+  merge_sources_excluded:
+  - lexFind
+  - qRandomizer
+  - chainCheck
+  - cyberSentinel
+  - mediScope
+  - finGuard
+  - qOptiSolve
+  archives_excluded:
+  - Grain
+  - razorBill
+  - tradeFluxsimulator
+  - trendy
+  - brsuite
+  - crm
+  - questionnaire
+  forbidden_default_actions:
+  - production_deploy
+  - customer_release
+  - live_trade
+  - capital_allocation
+  - push_main
+  - force_push
+  - read_secrets
+  - disable_gates
+  - approve_own_work
+  - auto_merge
+  - auto_restore
+  - auto_delete
+  forbidden_default_paths:
+  - .env
+  - .env.*
+  - secrets/**
+  - credentials/**
+  - customer_data/**
+  - prod_dumps/**
+  - '*.pem'
+  - '*.key'
+  - id_rsa
+  - id_ed25519
+  - .cursor/**
+promotion_policy:
+  production_allowed: false
+  customer_release_allowed: false
+  live_allowed: false
+  requires_human_approval: true
+  default_gate_status: review_required
+  missing_evidence_status: blocked
+  security_failure_status: blocked
+  calibration_failure_status: blocked

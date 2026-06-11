@@ -1,0 +1,280 @@
+version: 0.2.0
+registry_type: merge_sources
+summary:
+  merge_source_count: 7
+  count_as_active_projects: false
+  active_automation_allowed: false
+  human_review_required: true
+  auto_merge_allowed: false
+  auto_delete_allowed: false
+  production_allowed_by_default: false
+  customer_release_allowed_by_default: false
+  live_allowed_by_default: false
+defaults:
+  enabled: true
+  active: false
+  count_as_active_project: false
+  worker_allowed: false
+  standalone_promotion_allowed: false
+  auto_merge_allowed: false
+  auto_delete_allowed: false
+  requires_human_approval: true
+  default_task_type: merge_review
+  default_executor: codex
+  fallback_executor: opencode
+  default_model_route: local_critic
+  validation_profiles:
+  - docs
+  - security
+  - config
+  safety_gates:
+  - agent_safety
+  - production_readiness
+  forbidden_actions:
+  - push_main
+  - force_push
+  - deploy_production
+  - live_trade
+  - allocate_capital
+  - read_secrets
+  - delete_source_project
+  - approve_own_work
+  - auto_merge
+  - disable_gates
+merge_sources:
+  lexFind:
+    enabled: true
+    active: false
+    source: lexFind
+    target: docuQuery
+    target_workstation: evox2_windows
+    status: staged_for_integration
+    integration_type: feature_merge
+    category: document_search
+    tags:
+    - document_search
+    - merge_source
+    - docuQuery
+    count_as_active_project: false
+    worker_allowed: false
+    standalone_promotion_allowed: false
+    auto_merge_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: merge_review
+      title: Review lexFind for integration into docuQuery
+      target_branch_format: agent/docuQuery/merge-lexFind/evox2
+      required_outputs:
+      - merge_inventory.md
+      - compatibility_notes.md
+      - patch.diff
+      - validation.log
+      - debrief.md
+      - promotion_gate.json
+  qRandomizer:
+    enabled: true
+    active: false
+    source: qRandomizer
+    target: quantumKeyStream
+    target_workstation: evox2_windows
+    status: staged_for_integration
+    integration_type: feature_merge
+    category: quantum_randomness
+    tags:
+    - quantum_randomness
+    - merge_source
+    - quantumKeyStream
+    count_as_active_project: false
+    worker_allowed: false
+    standalone_promotion_allowed: false
+    auto_merge_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: merge_review
+      title: Review qRandomizer for integration into quantumKeyStream
+      target_branch_format: agent/quantumKeyStream/merge-qRandomizer/evox2
+      required_outputs:
+      - merge_inventory.md
+      - compatibility_notes.md
+      - patch.diff
+      - validation.log
+      - debrief.md
+      - promotion_gate.json
+  chainCheck:
+    enabled: true
+    active: false
+    source: chainCheck
+    target: docuchainVerify
+    target_workstation: evox2_windows
+    status: staged_for_integration
+    integration_type: feature_merge
+    category: blockchain_document_verification
+    tags:
+    - blockchain_document_verification
+    - merge_source
+    - docuchainVerify
+    count_as_active_project: false
+    worker_allowed: false
+    standalone_promotion_allowed: false
+    auto_merge_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: merge_review
+      title: Review chainCheck for integration into docuchainVerify
+      target_branch_format: agent/docuchainVerify/merge-chainCheck/evox2
+      required_outputs:
+      - merge_inventory.md
+      - compatibility_notes.md
+      - patch.diff
+      - validation.log
+      - debrief.md
+      - promotion_gate.json
+  cyberSentinel:
+    enabled: true
+    active: false
+    source: cyberSentinel
+    target: guardianShield
+    target_workstation: evox2_windows
+    status: staged_for_integration
+    integration_type: feature_merge
+    category: security_monitoring
+    tags:
+    - security_monitoring
+    - merge_source
+    - guardianShield
+    count_as_active_project: false
+    worker_allowed: false
+    standalone_promotion_allowed: false
+    auto_merge_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: merge_review
+      title: Review cyberSentinel for integration into guardianShield
+      target_branch_format: agent/guardianShield/merge-cyberSentinel/evox2
+      required_outputs:
+      - merge_inventory.md
+      - compatibility_notes.md
+      - patch.diff
+      - validation.log
+      - debrief.md
+      - promotion_gate.json
+  mediScope:
+    enabled: true
+    active: false
+    source: mediScope
+    target: clinical-suite
+    target_workstation: dgx_spark
+    status: staged_for_integration
+    integration_type: feature_merge
+    category: medical_document_processing
+    tags:
+    - medical_document_processing
+    - merge_source
+    - clinical-suite
+    count_as_active_project: false
+    worker_allowed: false
+    standalone_promotion_allowed: false
+    auto_merge_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: merge_review
+      title: Review mediScope for integration into clinical-suite
+      target_branch_format: agent/clinical-suite/merge-mediScope/dgx
+      required_outputs:
+      - merge_inventory.md
+      - compatibility_notes.md
+      - patch.diff
+      - validation.log
+      - debrief.md
+      - promotion_gate.json
+  finGuard:
+    enabled: true
+    active: false
+    source: finGuard
+    target: financial_alpha_risk_research_lab
+    target_workstation: dgx_spark
+    status: staged_for_integration
+    integration_type: feature_merge
+    category: financial_risk
+    tags:
+    - financial_risk
+    - merge_source
+    - financial_alpha_risk_research_lab
+    count_as_active_project: false
+    worker_allowed: false
+    standalone_promotion_allowed: false
+    auto_merge_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: merge_review
+      title: Review finGuard for integration into financial_alpha_risk_research_lab
+      target_branch_format: agent/financial_alpha_risk_research_lab/merge-finGuard/dgx
+      required_outputs:
+      - merge_inventory.md
+      - compatibility_notes.md
+      - patch.diff
+      - validation.log
+      - debrief.md
+      - promotion_gate.json
+  qOptiSolve:
+    enabled: true
+    active: false
+    source: qOptiSolve
+    target: quantum_hybrid_research_optimization_lab
+    target_workstation: dgx_spark
+    status: staged_for_integration
+    integration_type: feature_merge
+    category: quantum_optimization
+    tags:
+    - quantum_optimization
+    - merge_source
+    - quantum_hybrid_research_optimization_lab
+    count_as_active_project: false
+    worker_allowed: false
+    standalone_promotion_allowed: false
+    auto_merge_allowed: false
+    auto_delete_allowed: false
+    requires_human_approval: true
+    recommended_task:
+      type: merge_review
+      title: Review qOptiSolve for integration into quantum_hybrid_research_optimization_lab
+      target_branch_format: agent/quantum_hybrid_research_optimization_lab/merge-qOptiSolve/dgx
+      required_outputs:
+      - merge_inventory.md
+      - compatibility_notes.md
+      - patch.diff
+      - validation.log
+      - debrief.md
+      - promotion_gate.json
+rules:
+  active_counting:
+    count_as_active_projects: false
+  automation:
+    worker_allowed_by_default: false
+    allow_task_generation: true
+    allowed_task_types:
+    - merge_review
+    - compatibility_audit
+    - source_inventory
+    - migration_plan
+  merge_policy:
+    automatic_merge_allowed: false
+    require_human_review: true
+    require_target_branch: true
+    require_patch_diff: true
+    require_validation_log: true
+    require_debrief: true
+    require_promotion_gate: true
+    default_gate_status: review_required
+  promotion_policy:
+    standalone_promotion_allowed: false
+    production_allowed: false
+    customer_release_allowed: false
+    live_allowed: false
+    requires_human_approval: true

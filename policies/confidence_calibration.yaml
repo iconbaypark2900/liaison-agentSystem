@@ -1,0 +1,64 @@
+version: 0.2.0
+confidence_calibration:
+  live_allowed_by_default: false
+  production_allowed_by_default: false
+  customer_release_allowed_by_default: false
+  applies_to_projects:
+  - sigma
+  - event-market
+  - event_market
+  - trading
+  - market-alpha
+  - prediction
+  - finance
+  - portfolio
+  applies_to_task_types:
+  - trading_or_capital_related
+  - calibration
+  - prediction_scoring
+  - ranking
+  - forecasting
+  - finance
+  - event_market
+  - paper_trading
+  - shadow_trading
+  - backtesting
+  - walk_forward_validation
+  - historical_replay
+  - edge_estimation
+  - strategy_promotion
+  forbidden_patterns:
+  - edge * 0.05
+  - confidence * 0.05
+  - model_score * 0.05
+  - score * 0.05
+  - probability * 0.05
+  - predicted_probability * 0.05
+  - "×0.05"
+  - placeholder_edge
+  - fabricated_edge
+  - synthetic_edge
+  - mock_edge
+  - fake_edge
+  - default_edge
+  minimum_samples:
+    research_report: 30
+    paper_candidate: 100
+    live_candidate: 300
+  required_before_live:
+  - fabricated_edges_removed
+  - edge_provenance_present
+  - confidence_calibrated
+  - historical_replay_passed
+  - walk_forward_validation_passed
+  - paper_results_verified
+  - fee_slippage_model_present
+  - minimum_sample_count_met
+  - human_approval_present
+  blocked_actions:
+  - live_trade
+  - capital_allocation
+  - production_deploy
+  - customer_release
+  - customer_claims
+  - strategy_promotion_to_live

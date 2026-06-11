@@ -1,0 +1,31 @@
+version: 0.2.0
+project_profiles:
+  hybrid_qml_kg:
+    enabled: true
+    display_name: Hybrid QML-KG Link Prediction
+    repo_aliases:
+    - local-agents
+    - hybrid-qml-kg-poc
+    - biomedical
+    tags:
+    - quantum
+    - qml
+    - knowledge_graph
+    - biomedical
+    - dgx
+    - gpu
+    - research
+    preferred_hosts:
+      interactive: evox2_windows
+      heavy_compute: dgx_spark
+      validation: dgx_spark
+    default_validation_profiles:
+    - python
+    - config
+    - docs
+    - data_quality
+    forbidden_prompt_content:
+    - IBM Quantum token values
+    - integration encryption keys
+    - API keys
+    - private credentials
