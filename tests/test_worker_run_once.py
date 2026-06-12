@@ -127,6 +127,8 @@ def test_run_once_selects_one_task_and_creates_run_artifacts(tmp_path: Path) -> 
 
     for artifact in REQUIRED_RUN_ARTIFACTS:
         assert (result.run_dir / artifact).exists()
+    assert (result.run_dir / "validation_plan.json").exists()
+    assert (result.run_dir / "validation_plan.md").exists()
 
 
 def test_run_once_moves_task_to_review_required_never_done(tmp_path: Path) -> None:
@@ -197,7 +199,13 @@ def test_no_executor_model_or_shell_calls_occur(tmp_path: Path) -> None:
     executor_result = json.loads((result.run_dir / "executor_result.json").read_text(encoding="utf-8"))
     model_line = (result.run_dir / "model_calls.jsonl").read_text(encoding="utf-8").strip()
     model_event = json.loads(model_line)
+    command_text = (result.run_dir / "command.txt").read_text(encoding="utf-8")
+    validation_plan = json.loads((result.run_dir / "validation_plan.json").read_text(encoding="utf-8"))
 
+    assert metadata["shell_commands_executed"] is False
+    assert metadata["models_called"] is False
+    assert metadata["executors_called"] is False
+    assert metadata["validation_execution_allowed"] is False
     assert metadata["tool_execution"]["executor_invoked"] is False
     assert metadata["tool_execution"]["model_calls_made"] is False
     assert metadata["tool_execution"]["shell_commands_run"] is False
@@ -210,6 +218,11 @@ def test_no_executor_model_or_shell_calls_occur(tmp_path: Path) -> None:
     assert executor_result["executed"] is False
     assert executor_result["shell_commands_run"] == []
     assert model_event["model_calls_made"] is False
+    assert "placeholder mode: no commands executed" in command_text
+    assert validation_plan["shell_commands_executed"] is False
+    assert validation_plan["validation_execution_allowed"] is False
+    assert validation_plan["commands"][0]["status"] == "planned"
+    assert validation_plan["commands"][0]["execution_allowed"] is False
 
 
 def test_evidence_show_reports_all_required_artifacts(tmp_path: Path) -> None:
@@ -225,4 +238,8 @@ def test_evidence_show_reports_all_required_artifacts(tmp_path: Path) -> None:
 
     assert summary["exists"] is True
     assert summary["missing_evidence"] == []
-    assert {artifact["name"] for artifact in summary["artifacts"]} == set(REQUIRED_RUN_ARTIFACTS)
+    assert {artifact["name"] for artifact in summary["artifacts"]} == {
+        *REQUIRED_RUN_ARTIFACTS,
+        "validation_plan.json",
+        "validation_plan.md",
+    }
