@@ -41,6 +41,8 @@ REQUIRED_RUN_ARTIFACTS = (
     "stderr.log",
     "patch.diff",
     "validation.log",
+    "validation_result.json",
+    "validation_result.md",
     "security.log",
     "data_quality.log",
     "compliance.md",
@@ -561,7 +563,10 @@ def write_run_artifacts(
         build_context_md(packet=packet, run_id=run_id, started_at=started_at),
         encoding="utf-8",
     )
-    (run_dir / "command.txt").write_text(command_text + "\n", encoding="utf-8")
+    (run_dir / "command.txt").write_text(
+        command_text + "\nplaceholder mode: no commands executed\n",
+        encoding="utf-8",
+    )
     (run_dir / "model_calls.jsonl").write_text(
         json.dumps(
             {
@@ -610,6 +615,16 @@ def write_run_artifacts(
         build_validation_log(packet=packet, started_at=started_at, completed_at=completed_at),
         encoding="utf-8",
     )
+    write_validation_plan_artifacts(
+        run_dir=run_dir,
+        packet=packet,
+        run_id=run_id,
+    )
+    write_validation_result_artifacts(
+        run_dir=run_dir,
+        packet=packet,
+        run_id=run_id,
+    )
     (run_dir / "security.log").write_text(build_security_log(run_id=run_id), encoding="utf-8")
     (run_dir / "data_quality.log").write_text(build_data_quality_log(packet=packet), encoding="utf-8")
     (run_dir / "compliance.md").write_text(
@@ -636,6 +651,152 @@ def write_run_artifacts(
     )
     (run_dir / "run_metadata.json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def validation_command_entries(task: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    task = task or {}
+    validation = task.get("validation", [])
+    entries: list[dict[str, Any]] = []
+    if not isinstance(validation, list):
+        return entries
+    for index, item in enumerate(validation, start=1):
+        if isinstance(item, str):
+            command = item
+            name = f"validation_{index}"
+            required = False
+        elif isinstance(item, Mapping):
+            command = str(item.get("command", "")).strip()
+            if not command:
+                continue
+            name = str(item.get("name") or f"validation_{index}")
+            required = bool(item.get("required", False))
+        else:
+            continue
+        entries.append(
+            {
+                "name": name,
+                "command": command,
+                "required": required,
+                "status": "planned",
+                "execution_allowed": False,
+                "executed": False,
+            }
+        )
+    return entries
+
+
+def build_validation_plan_payload(*, packet: TaskPacket, run_id: str) -> dict[str, Any]:
+    return {
+        "run_id": run_id,
+        "task_id": packet.task_id,
+        "project": packet.project,
+        "task_type": packet.task_type,
+        "status": "planned",
+        "execution_allowed": False,
+        "shell_commands_executed": False,
+        "validation_execution_allowed": False,
+        "commands": validation_command_entries(packet.data),
+    }
+
+
+def build_validation_plan_md(payload: Mapping[str, Any]) -> str:
+    lines = [
+        "# Validation Plan",
+        "",
+        f"- Run ID: {payload.get('run_id', '')}",
+        f"- Task ID: {payload.get('task_id', '')}",
+        f"- Project: {payload.get('project', '')}",
+        "- Status: planned",
+        "- Execution allowed: false",
+        "- Shell commands executed: false",
+        "",
+        "## Planned Commands",
+        "",
+    ]
+    commands = payload.get("commands", [])
+    if isinstance(commands, list) and commands:
+        for command in commands:
+            if not isinstance(command, Mapping):
+                continue
+            lines.extend(
+                [
+                    f"### {command.get('name', 'validation')}",
+                    f"- Command: `{command.get('command', '')}`",
+                    f"- Required: {json_bool(bool(command.get('required', False)))}",
+                    "- Status: planned",
+                    "- Execution allowed: false",
+                    "",
+                ]
+            )
+    else:
+        lines.append("No validation commands declared.")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def write_validation_plan_artifacts(*, run_dir: Path, packet: TaskPacket, run_id: str) -> None:
+    payload = build_validation_plan_payload(packet=packet, run_id=run_id)
+    (run_dir / "validation_plan.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "validation_plan.md").write_text(
+        build_validation_plan_md(payload),
+        encoding="utf-8",
+    )
+
+
+def build_validation_result_payload(*, packet: TaskPacket, run_id: str) -> dict[str, Any]:
+    entries = validation_command_entries(packet.data)
+    return {
+        "run_id": run_id,
+        "task_id": packet.task_id,
+        "project": packet.project,
+        "task_type": packet.task_type,
+        "status": "not_run",
+        "execution_allowed": False,
+        "commands_executed": 0,
+        "commands_planned": len(entries),
+        "passed": False,
+        "evidence_only": True,
+    }
+
+
+def build_validation_result_md(payload: Mapping[str, Any]) -> str:
+    lines = [
+        "# Validation Result",
+        "",
+        f"- Run ID: {payload.get('run_id', '')}",
+        f"- Task ID: {payload.get('task_id', '')}",
+        f"- Project: {payload.get('project', '')}",
+        f"- Task Type: {payload.get('task_type', '')}",
+        "- Status: not_run",
+        "- Execution allowed: false",
+        f"- Commands planned: {payload.get('commands_planned', 0)}",
+        f"- Commands executed: {payload.get('commands_executed', 0)}",
+        "- Passed: false",
+        "- Evidence only: true",
+        "",
+        "## Note",
+        "",
+        "Validation commands were planned but not executed. This is a placeholder worker run.",
+        "No shell validation commands were invoked. The validation_plan.json contains the planned commands.",
+        "Future worker implementations will execute validation and populate this result.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def write_validation_result_artifacts(*, run_dir: Path, packet: TaskPacket, run_id: str) -> None:
+    payload = build_validation_result_payload(packet=packet, run_id=run_id)
+    (run_dir / "validation_result.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "validation_result.md").write_text(
+        build_validation_result_md(payload),
         encoding="utf-8",
     )
 
@@ -693,6 +854,8 @@ def required_artifact_specs_for_task(task: Mapping[str, Any] | None) -> list[dic
         add_artifact_spec(specs, order, name, source="global_required_artifacts")
     for name in artifact_names_from_value(task.get("required_artifacts")):
         add_artifact_spec(specs, order, name, source="task.required_artifacts")
+    add_artifact_spec(specs, order, "validation_plan.json", source="task.validation")
+    add_artifact_spec(specs, order, "validation_plan.md", source="task.validation")
     for key in TASK_SPECIFIC_ARTIFACT_KEYS:
         for name in artifact_names_from_value(task.get(key)):
             add_artifact_spec(specs, order, name, source=key, task_specific=True)
@@ -794,7 +957,7 @@ def render_task_specific_stub_artifact(
 def build_context_md(*, packet: TaskPacket, run_id: str, started_at: str) -> str:
     repo = packet.data.get("repo", {})
     routing = packet.data.get("routing", {})
-    validation = packet.data.get("validation", [])
+    validation_entries = validation_command_entries(packet.data)
     lines = [
         "# Liaison Placeholder Worker Context",
         "",
@@ -816,12 +979,11 @@ def build_context_md(*, packet: TaskPacket, run_id: str, started_at: str) -> str
         "## Validation Plan",
         "",
     ]
-    if isinstance(validation, list) and validation:
-        for item in validation:
-            if isinstance(item, dict):
-                lines.append(
-                    f"- {item.get('name', 'unnamed')}: skipped; command recorded but not executed."
-                )
+    if validation_entries:
+        for item in validation_entries:
+            lines.append(
+                f"- {item['name']}: planned; command recorded but not executed."
+            )
     else:
         lines.append("- No validation commands were declared.")
     lines.append("")
@@ -829,26 +991,22 @@ def build_context_md(*, packet: TaskPacket, run_id: str, started_at: str) -> str
 
 
 def build_validation_log(*, packet: TaskPacket, started_at: str, completed_at: str) -> str:
-    validation = packet.data.get("validation", [])
     entries: list[dict[str, Any]] = []
-    if isinstance(validation, list):
-        for item in validation:
-            if not isinstance(item, dict):
-                continue
-            entries.append(
-                {
-                    "name": item.get("name", "unnamed"),
-                    "command": item.get("command", ""),
-                    "started_at": None,
-                    "completed_at": None,
-                    "exit_code": None,
-                    "stdout": "",
-                    "stderr": "",
-                    "required": bool(item.get("required", False)),
-                    "status": "skipped",
-                    "reason": "placeholder worker does not run shell validation commands",
-                }
-            )
+    for item in validation_command_entries(packet.data):
+        entries.append(
+            {
+                "name": item["name"],
+                "command": item["command"],
+                "started_at": None,
+                "completed_at": None,
+                "exit_code": None,
+                "stdout": "",
+                "stderr": "",
+                "required": bool(item["required"]),
+                "status": "skipped",
+                "reason": "placeholder worker does not run shell validation commands",
+            }
+        )
     payload = {
         "run_started_at": started_at,
         "run_completed_at": completed_at,
@@ -1021,6 +1179,10 @@ def build_run_metadata(
         "started_at": started_at,
         "completed_at": completed_at,
         "command": command_text,
+        "shell_commands_executed": False,
+        "models_called": False,
+        "executors_called": False,
+        "validation_execution_allowed": False,
         "run_dir": str(run_dir),
         "artifacts": required_artifact_names_for_task(packet.data),
         "task_queue_transition": {

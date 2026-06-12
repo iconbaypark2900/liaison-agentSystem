@@ -76,6 +76,13 @@ def write_calibration_task(root: Path) -> None:
             "executor": "opencode",
             "fallback_executor": "shell",
         },
+        "validation": [
+            {
+                "name": "calibration_plan",
+                "command": "python -m pytest tests/test_calibration.py",
+                "required": True,
+            }
+        ],
         "required_artifacts": [
             "task.yaml",
             "context.md",
@@ -129,6 +136,7 @@ def test_evidence_show_human_output(tmp_path: Path, monkeypatch, capsys) -> None
     assert "status: review_required" in output
     assert "artifact_dir: .liaison/runs/" in output
     assert "present: task.yaml" in output
+    assert "present: validation_plan.json" in output
     assert "not_applicable: patch.diff" in output
     assert "production_allowed: false" in output
     assert "customer_release_allowed: false" in output
@@ -150,6 +158,8 @@ def test_evidence_show_json_output(tmp_path: Path, monkeypatch, capsys) -> None:
     assert payload["status"] == "review_required"
     assert payload["missing_evidence"] == []
     assert statuses["task.yaml"] == "present"
+    assert statuses["validation_plan.json"] == "present"
+    assert statuses["validation_plan.md"] == "present"
     assert statuses["patch.diff"] == "not_applicable"
     assert payload["promotion_gate_summary"]["production_allowed"] is False
     assert payload["promotion_gate_summary"]["customer_release_allowed"] is False
@@ -171,6 +181,8 @@ def test_gate_evaluate_complete_evidence(tmp_path: Path, monkeypatch, capsys) ->
     assert gate["production_allowed"] is False
     assert gate["customer_release_allowed"] is False
     assert gate["live_allowed"] is False
+    assert gate["validation_passed"] is False
+    assert "validation_not_run" in gate["failed_checks"]
 
 
 def test_gate_evaluate_missing_evidence_blocks(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -322,8 +334,59 @@ def test_generic_audit_task_uses_normal_required_artifacts_only(
     assert rc == 0
     assert payload["task_specific_artifacts"] == []
     assert payload["task_specific_artifact_groups"] == []
-    assert {artifact["name"] for artifact in payload["artifacts"]} == set(REQUIRED_RUN_ARTIFACTS)
+    assert {artifact["name"] for artifact in payload["artifacts"]} == {
+        *REQUIRED_RUN_ARTIFACTS,
+        "validation_plan.json",
+        "validation_plan.md",
+    }
     assert payload["missing_evidence"] == []
+
+
+def test_calibration_task_creates_validation_plan(tmp_path: Path, monkeypatch) -> None:
+    _, run_dir = create_calibration_run(tmp_path, monkeypatch)
+
+    plan = json.loads((run_dir / "validation_plan.json").read_text(encoding="utf-8"))
+    plan_md = (run_dir / "validation_plan.md").read_text(encoding="utf-8")
+    validation_log = yaml.safe_load((run_dir / "validation.log").read_text(encoding="utf-8"))
+
+    assert plan["status"] == "planned"
+    assert plan["execution_allowed"] is False
+    assert plan["shell_commands_executed"] is False
+    assert plan["validation_execution_allowed"] is False
+    assert plan["commands"] == [
+        {
+            "name": "calibration_plan",
+            "command": "python -m pytest tests/test_calibration.py",
+            "required": True,
+            "status": "planned",
+            "execution_allowed": False,
+            "executed": False,
+        }
+    ]
+    assert "# Validation Plan" in plan_md
+    assert "Execution allowed: false" in plan_md
+    assert validation_log["validation_executed"] is False
+    assert validation_log["entries"][0]["status"] == "skipped"
+
+
+def test_gate_does_not_treat_planned_validation_as_passed_execution(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    run_id, run_dir = create_run(tmp_path, monkeypatch)
+
+    rc = main(["gate", "evaluate", run_id, "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    saved = json.loads((run_dir / "promotion_gate.json").read_text(encoding="utf-8"))
+    assert rc == 0
+    assert (run_dir / "validation_plan.json").exists()
+    assert payload["status"] == "review_required"
+    assert payload["validation_passed"] is False
+    assert saved["validation_passed"] is False
+    assert "validation_not_run" in payload["failed_checks"]
+
 
 def test_confidence_calibration_gate_blocked_blocks_promotion(
     tmp_path: Path,
@@ -339,6 +402,7 @@ def test_confidence_calibration_gate_blocked_blocks_promotion(
     assert rc == 1
     assert payload["status"] == "blocked"
     assert gate["status"] == "blocked"
+    assert (run_dir / "validation_plan.json").exists()
     assert any("confidence_calibration_gate.json" in check for check in payload["failed_checks"])
     assert payload["missing_evidence"] == []
 
