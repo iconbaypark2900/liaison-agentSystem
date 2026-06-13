@@ -1,0 +1,17 @@
+# Liaison v0.2.0 Validation Execution Policy
+# Controls whether validation commands can be executed by workers.
+
+# Must be explicitly enabled by human approval before any validation command runs.
+enabled: false
+
+# Requires explicit human approval for each run requesting validation execution.
+require_human_approval: true
+
+# Approvers who can enable validation execution (empty = no one by default).
+approved_approvers: []
+
+# Reason for default disabled state.
+reason: "v0.2.0 placeholder mode: validation execution disabled by default"
+
+# Policy version for future compatibility.
+version: "0.2.0"
