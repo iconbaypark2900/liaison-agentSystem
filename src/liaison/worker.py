@@ -43,6 +43,8 @@ REQUIRED_RUN_ARTIFACTS = (
     "validation.log",
     "validation_result.json",
     "validation_result.md",
+    "validation_execution_approval.json",
+    "validation_execution_approval.md",
     "security.log",
     "data_quality.log",
     "compliance.md",
@@ -625,6 +627,11 @@ def write_run_artifacts(
         packet=packet,
         run_id=run_id,
     )
+    write_validation_execution_approval_artifacts(
+        run_dir=run_dir,
+        packet=packet,
+        run_id=run_id,
+    )
     (run_dir / "security.log").write_text(build_security_log(run_id=run_id), encoding="utf-8")
     (run_dir / "data_quality.log").write_text(build_data_quality_log(packet=packet), encoding="utf-8")
     (run_dir / "compliance.md").write_text(
@@ -797,6 +804,97 @@ def write_validation_result_artifacts(*, run_dir: Path, packet: TaskPacket, run_
     )
     (run_dir / "validation_result.md").write_text(
         build_validation_result_md(payload),
+        encoding="utf-8",
+    )
+
+
+def load_validation_execution_policy(root: Path = Path(".")) -> dict[str, Any]:
+    policy_path = root / "policies" / "validation_execution.yaml"
+    if not policy_path.exists():
+        return {
+            "enabled": False,
+            "require_human_approval": True,
+            "approved_approvers": [],
+            "reason": "v0.2.0 placeholder mode: validation execution disabled by default",
+            "version": "0.2.0",
+        }
+    try:
+        loaded = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return {
+            "enabled": False,
+            "require_human_approval": True,
+            "approved_approvers": [],
+            "reason": "v0.2.0 placeholder mode: invalid policy",
+            "version": "0.2.0",
+        }
+    if loaded is None:
+        loaded = {}
+    return {
+        "enabled": bool(loaded.get("enabled", False)),
+        "require_human_approval": bool(loaded.get("require_human_approval", True)),
+        "approved_approvers": list(loaded.get("approved_approvers", [])),
+        "reason": str(loaded.get("reason", "v0.2.0 placeholder mode: validation execution disabled")),
+        "version": str(loaded.get("version", "0.2.0")),
+    }
+
+
+def build_validation_execution_approval_payload(*, packet: TaskPacket, run_id: str, root: Path = Path(".")) -> dict[str, Any]:
+    policy = load_validation_execution_policy(root)
+    return {
+        "run_id": run_id,
+        "task_id": packet.task_id,
+        "project": packet.project,
+        "task_type": packet.task_type,
+        "execution_requested": False,
+        "execution_approved": False,
+        "approved_by": None,
+        "approval_required": True,
+        "policy": policy,
+        "reason": "v0.2.0 placeholder mode: validation execution disabled",
+    }
+
+
+def build_validation_execution_approval_md(payload: Mapping[str, Any]) -> str:
+    policy = payload.get("policy", {})
+    lines = [
+        "# Validation Execution Approval",
+        "",
+        f"- Run ID: {payload.get('run_id', '')}",
+        f"- Task ID: {payload.get('task_id', '')}",
+        f"- Project: {payload.get('project', '')}",
+        f"- Task Type: {payload.get('task_type', '')}",
+        "- Execution requested: false",
+        "- Execution approved: false",
+        "- Approved by: null",
+        "- Approval required: true",
+        "",
+        "## Policy",
+        "",
+        f"- Enabled: {json_bool(bool(policy.get('enabled', False)))}",
+        f"- Require human approval: {json_bool(bool(policy.get('require_human_approval', True)))}",
+        f"- Approved approvers: {policy.get('approved_approvers', [])}",
+        f"- Policy version: {policy.get('version', '0.2.0')}",
+        f"- Reason: {policy.get('reason', 'v0.2.0 placeholder mode: validation execution disabled')}",
+        "",
+        "## Note",
+        "",
+        "Validation execution is disabled by policy. This is a placeholder worker run.",
+        "No validation commands were or will be executed without explicit human approval.",
+        "Future worker implementations will request and require approval before executing validation.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def write_validation_execution_approval_artifacts(*, run_dir: Path, packet: TaskPacket, run_id: str, root: Path = Path(".")) -> None:
+    payload = build_validation_execution_approval_payload(packet=packet, run_id=run_id, root=root)
+    (run_dir / "validation_execution_approval.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "validation_execution_approval.md").write_text(
+        build_validation_execution_approval_md(payload),
         encoding="utf-8",
     )
 

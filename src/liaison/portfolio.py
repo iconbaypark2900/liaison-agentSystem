@@ -70,6 +70,7 @@ from .worker import (
     register_gate_subparser,
     register_worker_subparser,
 )
+from .executors import register_executor_subparser
 
 
 VALID_HOSTS = ("dgx_spark", "evox2_windows")
@@ -405,6 +406,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_worker_subparser(subparsers)
     register_evidence_subparser(subparsers)
     register_gate_subparser(subparsers)
+    register_executor_subparser(subparsers)
     return parser
 
 
