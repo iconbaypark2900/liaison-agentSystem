@@ -8,14 +8,17 @@ from unittest.mock import patch
 
 from liaison.executors import (
     EXECUTOR_CONFIG_PATH,
+    ExecutorResult,
     build_executor_status,
     cmd_executor_list,
     cmd_executor_ping,
+    cmd_executor_run,
     get_executor_capabilities,
     get_executor_config,
     is_executor_available,
     list_executors,
     load_executor_config,
+    run_executor,
 )
 
 
@@ -76,9 +79,8 @@ def test_executor_ping_returns_normalized_status() -> None:
     assert status.executor_id == "shell"
     assert status.enabled is True
     assert status.available is True  # bash should be available
-    assert status.execution_allowed is False
-    assert status.command == ["bash"]
-    assert "placeholder" in status.reason
+    assert status.execution_allowed is True  # shell has allow_execution: true in config
+    assert status.reason == "Ready"
     assert isinstance(status.capabilities, list)
     assert len(status.capabilities) > 0
 
@@ -92,10 +94,13 @@ def test_missing_binary_does_not_crash() -> None:
         assert "not found" in status.reason.lower() or "path" in status.reason.lower()
 
 
-def test_execution_allowed_false_by_default() -> None:
-    for executor_id in ["shell", "opencode", "codex", "claude_code", "ml_intern"]:
+def test_execution_allowed_by_config() -> None:
+    for executor_id in ["opencode", "codex", "claude_code", "ml_intern"]:
         status = build_executor_status(executor_id, PROJECT_ROOT)
         assert status.execution_allowed is False, f"{executor_id} should have execution_allowed=False"
+    # shell is explicitly allowed in config
+    status = build_executor_status("shell", PROJECT_ROOT)
+    assert status.execution_allowed is True
 
 
 def test_no_subprocess_task_execution_occurs() -> None:
@@ -110,10 +115,12 @@ def test_no_subprocess_task_execution_occurs() -> None:
 
 
 def test_no_production_flags_changed() -> None:
-    # The executor adapters should not touch production/customer/live flags
-    statuses = list_executors(PROJECT_ROOT)
-    for status in statuses:
-        assert status.execution_allowed is False
+    # Only shell is configured for execution; others remain locked
+    for status in list_executors(PROJECT_ROOT):
+        if status.executor_id == "shell":
+            assert status.execution_allowed is True
+        else:
+            assert status.execution_allowed is False
 
 
 def test_json_output_format(capsys) -> None:
@@ -147,7 +154,7 @@ def test_ping_json_output(capsys) -> None:
     assert payload["executor_id"] == "shell"
     assert "available" in payload
     assert "execution_allowed" in payload
-    assert payload["execution_allowed"] is False
+    assert payload["execution_allowed"] is True
 
 
 def test_ml_intern_disabled_by_default() -> None:
@@ -182,6 +189,75 @@ def test_executor_capabilities() -> None:
     assert "code_review" in caps
     assert "repo_aware" in caps
     assert "refactoring" in caps
+
+
+def test_run_executor_echo(capsys) -> None:
+    result = run_executor("shell", ["-c", "echo hello world"], root=PROJECT_ROOT)
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "hello world"
+    assert result.duration_sec > 0
+    assert result.executor_id == "shell"
+
+
+def test_run_executor_exit_code(capsys) -> None:
+    result = run_executor("shell", ["-c", "exit 42"], root=PROJECT_ROOT)
+    assert result.exit_code == 42
+
+
+def test_run_executor_stderr(capsys) -> None:
+    result = run_executor("shell", ["-c", "echo err >&2"], root=PROJECT_ROOT)
+    assert result.exit_code == 0
+    assert result.stderr.strip() == "err"
+
+
+def test_run_executor_timeout(capsys) -> None:
+    result = run_executor("shell", ["-c", "sleep 10"], root=PROJECT_ROOT, timeout=1)
+    assert result.exit_code == -1
+    assert "TIMEOUT" in result.stderr
+
+
+def test_run_executor_not_configured() -> None:
+    try:
+        run_executor("nonexistent", root=PROJECT_ROOT)
+        assert False, "Should have raised RuntimeError"
+    except RuntimeError as exc:
+        assert "not configured" in str(exc)
+
+
+def test_run_executor_disabled() -> None:
+    try:
+        run_executor("ml_intern", ["--version"], root=PROJECT_ROOT)
+        assert False, "Should have raised RuntimeError"
+    except RuntimeError as exc:
+        assert "disabled" in str(exc) or "not allowed" in str(exc)
+
+
+def test_cmd_executor_run_ok(capsys) -> None:
+    args = MockArgs(executor_id="shell", command_args=["-c", "echo ok"], timeout=None, cwd=None, json=False)
+    rc = cmd_executor_run(args)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Exit code: 0" in out
+    assert "ok" in out
+
+
+def test_cmd_executor_run_json(capsys) -> None:
+    args = MockArgs(executor_id="shell", command_args=["-c", "echo json_test"], timeout=None, cwd=None, json=True)
+    rc = cmd_executor_run(args)
+    assert rc == 0
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+    assert payload["exit_code"] == 0
+    assert payload["stdout"].strip() == "json_test"
+    assert payload["executor_id"] == "shell"
+
+
+def test_cmd_executor_run_disabled_executor(capsys) -> None:
+    args = MockArgs(executor_id="ml_intern", command_args=["--version"], timeout=None, cwd=None, json=False)
+    rc = cmd_executor_run(args)
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err
 
 
 def test_unknown_executor_returns_error_status() -> None:
