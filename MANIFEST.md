@@ -1,0 +1,87 @@
+# MANIFEST — Liaison v0.2.0 Full Assembly Bundle
+
+This bundle includes the corrected full docs plus code/config/tests generated for the Liaison v0.2.0 build.
+
+## Included areas
+
+- `docs/v0.2.0/`: full implementation specifications
+- `config/`: runtime config, project registries, profiles
+- `policies/`: safety, production, customer, calibration, preferences, secrets
+- `templates/`: task, evidence, workflow templates
+- `validation_profiles/`: frontend/backend and paper build profiles
+- `src/liaison/`: portfolio registry/profile/template/generation/CLI stubs
+- `tests/`: pytest tests for portfolio generation and CLI
+- `.liaison/tasks/*`: queue directory placeholders
+- `scripts/apply_bundle.sh`: safe copy helper
+
+## Files
+- `.agentignore` — 24 lines
+- `.liaison/tasks/active/.gitkeep` — 0 lines
+- `.liaison/tasks/backlog/.gitkeep` — 0 lines
+- `.liaison/tasks/blocked/.gitkeep` — 0 lines
+- `.liaison/tasks/cancelled/.gitkeep` — 0 lines
+- `.liaison/tasks/done/.gitkeep` — 0 lines
+- `.liaison/tasks/failed/.gitkeep` — 0 lines
+- `.liaison/tasks/review_required/.gitkeep` — 0 lines
+- `INSTALL_INSTRUCTIONS.md` — 58 lines
+- `MANIFEST.md` — 19 lines
+- `START_HERE.md` — 74 lines
+- `config/budgets.yaml` — 21 lines
+- `config/executors.yaml` — 36 lines
+- `config/hosts.yaml` — 22 lines
+- `config/litellm.yaml` — 15 lines
+- `config/model_routes.yaml` — 21 lines
+- `config/models.local.yaml` — 22 lines
+- `config/project_profiles/dgx_compute_projects.yaml` — 192 lines
+- `config/project_profiles/evox2_lightweight_projects.yaml` — 198 lines
+- `config/project_profiles/hybrid_qml_kg.yaml` — 31 lines
+- `config/project_registry.active.yaml` — 1351 lines
+- `config/project_registry.archives.yaml` — 246 lines
+- `config/project_registry.merge_sources.yaml` — 280 lines
+- `config/worker.yaml` — 10 lines
+- `docs/v0.2.0/CODEX_IMPLEMENTATION_PLAN.md` — 129 lines
+- `docs/v0.2.0/CONFIDENCE_CALIBRATION_GATE.md` — 197 lines
+- `docs/v0.2.0/DUAL_WORKSTATION_PROFILES.md` — 159 lines
+- `docs/v0.2.0/EVIDENCE_VALIDATION_AND_GATES.md` — 181 lines
+- `docs/v0.2.0/EXECUTOR_ADAPTER_CONTRACT.md` — 177 lines
+- `docs/v0.2.0/LOCAL_AGENTS_INTEGRATION_APPENDIX.md` — 102 lines
+- `docs/v0.2.0/MODEL_ROUTING_AND_BUDGETS.md` — 162 lines
+- `docs/v0.2.0/PORTFOLIO_CLI_INTEGRATION.md` — 68 lines
+- `docs/v0.2.0/PORTFOLIO_TASK_GENERATION.md` — 132 lines
+- `docs/v0.2.0/PROJECT_PORTFOLIO_WORKSTATION_ASSIGNMENT.md` — 147 lines
+- `docs/v0.2.0/README.md` — 56 lines
+- `docs/v0.2.0/RUNTIME_CONFIG_SPEC.md` — 244 lines
+- `docs/v0.2.0/SYSTEM_ARCHITECTURE.md` — 186 lines
+- `docs/v0.2.0/VERSION_FREEZE.md` — 120 lines
+- `docs/v0.2.0/WORKER_RUNTIME_AND_TASK_QUEUE.md` — 168 lines
+- `policies/agent_safety.yaml` — 17 lines
+- `policies/confidence_calibration.yaml` — 65 lines
+- `policies/customer_release.yaml` — 19 lines
+- `policies/operator_preferences.yaml` — 14 lines
+- `policies/production_readiness.yaml` — 18 lines
+- `policies/secret_handling.yaml` — 31 lines
+- `scripts/apply_bundle.sh` — 30 lines
+- `src/liaison/__init__.py` — 1 lines
+- `src/liaison/__main__.py` — 9 lines
+- `src/liaison/cli.py` — 14 lines
+- `src/liaison/portfolio.py` — 420 lines
+- `src/liaison/portfolio_profiles.py` — 318 lines
+- `src/liaison/portfolio_registry.py` — 446 lines
+- `src/liaison/task_generation.py` — 355 lines
+- `src/liaison/task_templates.py` — 316 lines
+- `templates/debrief.md` — 9 lines
+- `templates/evidence/dgx_experiment_debrief.md` — 8 lines
+- `templates/evidence/research_experiment_evidence.md` — 10 lines
+- `templates/task_packet.md` — 3 lines
+- `templates/tasks/project_audit_task.yaml` — 126 lines
+- `templates/tasks/project_calibration_gate_task.yaml` — 161 lines
+- `templates/tasks/project_release_gap_task.yaml` — 142 lines
+- `templates/tasks/project_security_scan_task.yaml` — 133 lines
+- `templates/tasks/project_validation_task.yaml` — 126 lines
+- `templates/workflows/dgx_full_embedding_task.yaml` — 9 lines
+- `templates/workflows/dgx_gpu_pipeline_task.yaml` — 9 lines
+- `templates/workflows/dgx_validation_task.yaml` — 9 lines
+- `tests/test_portfolio_cli.py` — 82 lines
+- `tests/test_portfolio_task_generation.py` — 782 lines
+- `validation_profiles/frontend_next_fastapi.yaml` — 16 lines
+- `validation_profiles/paper_build.yaml` — 10 lines
