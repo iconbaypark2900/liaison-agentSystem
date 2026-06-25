@@ -20,6 +20,8 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import yaml
 
+from liaison.executors import run_executor
+
 
 TASK_STATES = (
     "backlog",
@@ -126,6 +128,9 @@ class WorkerRunResult:
     project: str | None = None
     run_dir: Path | None = None
     review_path: Path | None = None
+    called_executors: bool = False
+    ran_shell_validation: bool = False
+    validation_execution_allowed: bool = False
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -138,8 +143,9 @@ class WorkerRunResult:
             "review_path": str(self.review_path) if self.review_path else None,
             "executed_tasks": False,
             "called_models": False,
-            "called_executors": False,
-            "ran_shell_validation": False,
+            "called_executors": self.called_executors,
+            "ran_shell_validation": self.ran_shell_validation,
+            "validation_execution_allowed": self.validation_execution_allowed,
             "created_branches": False,
             "pushed_to_main": False,
             "deployed": False,
@@ -385,17 +391,32 @@ def run_once(
         run_id=run_id,
         command_text=command_text,
         started_at=started_at,
+        root=root,
     )
     review_path = move_task_to_review(active_path, root=root)
 
+    policy = load_validation_execution_policy(root)
+    validation_enabled = bool(policy.get("enabled", False))
+    human_approved = False
+    if validation_enabled and policy.get("require_human_approval", True):
+        approval_path = run_dir / "validation_execution_approval.json"
+        if approval_path.exists():
+            approval = read_json_file(approval_path)
+            human_approved = bool(approval.get("execution_approved", False))
+    execution_active = validation_enabled and (human_approved or not policy.get("require_human_approval", True))
+    message = f"Executed validation for task {active_packet.task_id}." if execution_active else f"Placeholder worker created evidence for task {active_packet.task_id}."
+
     return WorkerRunResult(
         ran=True,
-        message=f"Placeholder worker created evidence for task {active_packet.task_id}.",
+        message=message,
         run_id=run_id,
         task_id=active_packet.task_id,
         project=active_packet.project,
         run_dir=run_dir,
         review_path=review_path,
+        called_executors=execution_active,
+        ran_shell_validation=execution_active,
+        validation_execution_allowed=execution_active,
     )
 
 
@@ -558,6 +579,7 @@ def write_run_artifacts(
     run_id: str,
     command_text: str,
     started_at: str,
+    root: Path = Path("."),
 ) -> None:
     completed_at = utc_now_iso()
     (run_dir / "task.yaml").write_text(packet.text, encoding="utf-8")
@@ -659,6 +681,14 @@ def write_run_artifacts(
     (run_dir / "run_metadata.json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+    )
+
+    validate_with_executor(
+        packet=packet,
+        run_dir=run_dir,
+        run_id=run_id,
+        root=root,
+        started_at=started_at,
     )
 
 
@@ -1050,6 +1080,334 @@ def render_task_specific_stub_artifact(
             "No real task-specific scan, shell command, model call, or executor call was run.\n"
         )
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def _resolve_repo_cwd(task_data: Mapping[str, Any]) -> Path | None:
+    repo = task_data.get("repo", {})
+    if isinstance(repo, dict):
+        repo_path = repo.get("path")
+        if repo_path:
+            candidate = Path(str(repo_path))
+            if candidate.is_dir():
+                return candidate.resolve()
+    return None
+
+
+def _run_validation_commands(
+    *, packet: TaskPacket, repo_cwd: Path | None, root: Path
+) -> list[dict[str, Any]]:
+    entries = validation_command_entries(packet.data)
+    results = []
+    for entry in entries:
+        command = entry["command"]
+        try:
+            result = run_executor(
+                "shell",
+                ["-c", command],
+                cwd=repo_cwd,
+                root=root,
+            )
+            results.append({
+                "name": entry["name"],
+                "command": command,
+                "required": entry["required"],
+                "exit_code": result.exit_code,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "duration_sec": result.duration_sec,
+                "status": "passed" if result.exit_code == 0 else "failed",
+            })
+        except RuntimeError as exc:
+            results.append({
+                "name": entry["name"],
+                "command": command,
+                "required": entry["required"],
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": str(exc),
+                "duration_sec": 0.0,
+                "status": "error",
+            })
+    return results
+
+
+def _run_security_check(
+    *, root: Path, repo_cwd: Path | None
+) -> dict[str, Any] | None:
+    if repo_cwd is None:
+        return None
+    security_script = root / "checks" / "security.sh"
+    if not security_script.exists():
+        return None
+    try:
+        result = run_executor("shell", [str(security_script)], cwd=repo_cwd, root=root)
+        return {
+            "exit_code": result.exit_code,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "duration_sec": result.duration_sec,
+            "passed": result.exit_code == 0,
+        }
+    except RuntimeError:
+        return None
+
+
+def validate_with_executor(
+    *, packet: TaskPacket, run_dir: Path, run_id: str, root: Path, started_at: str
+) -> None:
+    policy = load_validation_execution_policy(root)
+    if not policy.get("enabled", False):
+        return
+    if policy.get("require_human_approval", True):
+        approval_path = run_dir / "validation_execution_approval.json"
+        if approval_path.exists():
+            approval = read_json_file(approval_path)
+            if not approval.get("execution_approved", False):
+                return
+        else:
+            return
+
+    repo_cwd = _resolve_repo_cwd(packet.data)
+    completed_at = utc_now_iso()
+
+    validation_results = _run_validation_commands(packet=packet, repo_cwd=repo_cwd, root=root)
+    all_passed = all(r["status"] == "passed" for r in validation_results) if validation_results else True
+
+    validation_log = yaml.safe_dump({
+        "run_started_at": started_at,
+        "run_completed_at": completed_at,
+        "validation_executed": True,
+        "entries": [
+            {
+                "name": r["name"],
+                "command": r["command"],
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "exit_code": r["exit_code"],
+                "stdout": r["stdout"],
+                "stderr": r["stderr"],
+                "required": r["required"],
+                "status": r["status"],
+                "reason": "",
+            }
+            for r in validation_results
+        ],
+    }, sort_keys=False)
+    (run_dir / "validation.log").write_text(validation_log, encoding="utf-8")
+
+    validation_result_payload = {
+        "run_id": run_id,
+        "task_id": packet.task_id,
+        "project": packet.project,
+        "task_type": packet.task_type,
+        "status": "passed" if all_passed else "failed",
+        "execution_allowed": True,
+        "commands_executed": len(validation_results),
+        "commands_planned": len(validation_results),
+        "passed": all_passed,
+        "evidence_only": False,
+        "results": validation_results,
+    }
+    (run_dir / "validation_result.json").write_text(
+        json.dumps(validation_result_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "validation_result.md").write_text(
+        _format_validation_result_md(validation_result_payload),
+        encoding="utf-8",
+    )
+
+    security_result = _run_security_check(root=root, repo_cwd=repo_cwd)
+    if security_result:
+        security_log_lines = [
+            "# Security Log",
+            f"Run ID: {run_id}",
+            f"Script: checks/security.sh",
+            f"Exit code: {security_result['exit_code']}",
+            "",
+            "## Output",
+            security_result["stdout"].rstrip() if security_result["stdout"] else "(no output)",
+            "",
+        ]
+        if security_result["stderr"]:
+            security_log_lines.extend(["## Stderr", security_result["stderr"].rstrip(), ""])
+        security_log_lines.append(f"Security check {'PASSED' if security_result['passed'] else 'FAILED'}")
+        (run_dir / "security.log").write_text("\n".join(security_log_lines) + "\n", encoding="utf-8")
+
+    executor_payload = {
+        "run_id": run_id,
+        "task_id": packet.task_id,
+        "executed": True,
+        "executor": "shell",
+        "shell_commands_run": [r["command"] for r in validation_results],
+        "validation_commands_run": validation_results,
+        "reason": "Validation commands executed via shell executor",
+    }
+    (run_dir / "executor_result.json").write_text(
+        json.dumps(executor_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    cmd_lines = ["Validation commands executed via shell executor:"]
+    for r in validation_results:
+        cmd_lines.append(f"  $ {r['command']}")
+    cmd_lines.append(f"All passed: {all_passed}")
+    if security_result:
+        cmd_lines.append(f"Security check passed: {security_result['passed']}")
+    (run_dir / "command.txt").write_text("\n".join(cmd_lines) + "\n", encoding="utf-8")
+
+    stdout_parts = []
+    stderr_parts = []
+    for r in validation_results:
+        if r["stdout"]:
+            stdout_parts.append(f"--- {r['name']} (exit {r['exit_code']}) ---")
+            stdout_parts.append(r["stdout"].rstrip())
+        if r["stderr"]:
+            stderr_parts.append(f"--- {r['name']} ---")
+            stderr_parts.append(r["stderr"].rstrip())
+    if security_result:
+        if security_result["stdout"]:
+            stdout_parts.append("--- security check ---")
+            stdout_parts.append(security_result["stdout"].rstrip())
+        if security_result["stderr"]:
+            stderr_parts.append("--- security check ---")
+            stderr_parts.append(security_result["stderr"].rstrip())
+    (run_dir / "stdout.log").write_text("\n".join(stdout_parts) + "\n" if stdout_parts else "(no stdout)\n", encoding="utf-8")
+    (run_dir / "stderr.log").write_text("\n".join(stderr_parts) + "\n" if stderr_parts else "(no stderr)\n", encoding="utf-8")
+
+    security_passed = security_result["passed"] if security_result else False
+    dq_lines = [
+        f"Data quality validation for task {packet.task_id}.",
+        f"Validation commands executed: {len(validation_results)}.",
+        f"All passed: {all_passed}.",
+    ]
+    (run_dir / "data_quality.log").write_text("\n".join(dq_lines) + "\n", encoding="utf-8")
+
+    compliance_lines = [
+        "# Compliance Evidence",
+        f"- Run ID: {run_id}",
+        f"- Task ID: {packet.task_id}",
+        f"- Project: {packet.project}",
+        "- Validation executed: True",
+        f"- Validation passed: {all_passed}",
+        f"- Security check passed: {security_passed}",
+        "- Commands were run via shell executor.",
+        "- Production/customer/live flags remain False.",
+        "- Human approval required for promotion.",
+    ]
+    (run_dir / "compliance.md").write_text("\n".join(compliance_lines) + "\n", encoding="utf-8")
+
+    promotion_gate = {
+        "run_id": run_id,
+        "task_id": packet.task_id,
+        "project": packet.project,
+        "task_type": packet.task_type,
+        "status": "passed" if all_passed and security_passed else "review_required",
+        "live_allowed": False,
+        "customer_release_allowed": False,
+        "production_allowed": False,
+        "required_human_approval": True,
+        "model_budget_passed": False,
+        "model_call_log_present": False,
+        "validation_passed": all_passed,
+        "security_passed": security_passed,
+        "data_quality_passed": all_passed,
+        "compliance_passed": all_passed and security_passed,
+        "confidence_calibration_passed": False,
+        "failed_checks": [],
+        "passed_checks": [
+            "executor_invoked",
+            "validation_commands_executed",
+        ],
+        "missing_evidence": [],
+        "notes": [
+            "Validation commands executed via shell executor.",
+            "Production, customer release, and live use remain disallowed.",
+        ],
+    }
+    if not all_passed:
+        promotion_gate["failed_checks"].append("validation_commands_failed")
+    if not security_passed:
+        promotion_gate["failed_checks"].append("security_check_failed")
+    (run_dir / "promotion_gate.json").write_text(
+        json.dumps(promotion_gate, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    debrief_lines = [
+        "# Debrief",
+        "## Summary",
+        f"Validation executed via shell executor for {packet.task_id}.",
+        "",
+        "## Task",
+        f"{packet.task_id} ({packet.project}, {packet.task_type})",
+        "",
+        "## Executor/model route",
+        "Shell executor invoked for validation commands.",
+        "",
+        "## Commands run",
+    ]
+    for r in validation_results:
+        debrief_lines.append(f"- {r['name']}: {r['status']} (exit {r['exit_code']}, {r['duration_sec']}s)")
+    if security_result:
+        debrief_lines.append(f"- security check: {'passed' if security_result['passed'] else 'failed'} (exit {security_result['exit_code']})")
+    debrief_lines.extend([
+        "",
+        "## Validation results",
+        f"All validation commands passed: {all_passed}",
+        "",
+        "## Security findings",
+        f"Security check passed: {security_passed}",
+        "",
+        "## Promotion gates",
+        f"Status: {promotion_gate['status']}",
+        "Production/customer/live flags remain false.",
+        "Human approval required.",
+    ])
+    (run_dir / "debrief.md").write_text("\n".join(debrief_lines) + "\n", encoding="utf-8")
+
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = read_json_file(metadata_path)
+    metadata["run_type"] = "validation_executor_run_once"
+    metadata["shell_commands_executed"] = True
+    metadata["executors_called"] = True
+    metadata["validation_execution_allowed"] = True
+    metadata["tool_execution"]["executor_invoked"] = True
+    metadata["tool_execution"]["shell_commands_run"] = True
+    metadata["tool_execution"]["validation_commands_run"] = True
+    (metadata_path).write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _format_validation_result_md(payload: dict[str, Any]) -> str:
+    lines = [
+        "# Validation Result",
+        f"- Run ID: {payload.get('run_id', '')}",
+        f"- Task ID: {payload.get('task_id', '')}",
+        f"- Project: {payload.get('project', '')}",
+        f"- Task Type: {payload.get('task_type', '')}",
+        f"- Status: {payload.get('status', 'unknown')}",
+        f"- Execution allowed: {payload.get('execution_allowed', False)}",
+        f"- Commands planned: {payload.get('commands_planned', 0)}",
+        f"- Commands executed: {payload.get('commands_executed', 0)}",
+        f"- Passed: {payload.get('passed', False)}",
+        "",
+        "## Results",
+    ]
+    for r in payload.get("results", []):
+        lines.append(f"### {r['name']}")
+        lines.append(f"- Command: `{r['command']}`")
+        lines.append(f"- Status: {r['status']}")
+        lines.append(f"- Exit code: {r['exit_code']}")
+        lines.append(f"- Duration: {r['duration_sec']}s")
+        if r.get("stdout", "").strip():
+            lines.append(f"- Stdout: {r['stdout'].strip()[:200]}")
+        if r.get("stderr", "").strip():
+            lines.append(f"- Stderr: {r['stderr'].strip()[:200]}")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def build_context_md(*, packet: TaskPacket, run_id: str, started_at: str) -> str:
