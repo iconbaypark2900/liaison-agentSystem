@@ -14,6 +14,7 @@ from liaison.worker import (
     evaluate_promotion_gate,
     evidence_summary,
     run_once,
+    validate_with_executor,
     worker_status,
 )
 
@@ -243,3 +244,120 @@ def test_evidence_show_reports_all_required_artifacts(tmp_path: Path) -> None:
         "validation_plan.json",
         "validation_plan.md",
     }
+
+
+def write_policy(root: Path, *, enabled: bool, require_human_approval: bool) -> Path:
+    path = root / "policies" / "validation_execution.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "enabled": enabled,
+        "require_human_approval": require_human_approval,
+        "approved_approvers": ["test"],
+        "reason": "test: validation execution enabled",
+        "version": "0.2.0",
+    }
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def test_validation_execution_enabled_no_repo_path(tmp_path: Path) -> None:
+    write_policy(tmp_path, enabled=True, require_human_approval=False)
+    ensure_queue_dirs(tmp_path)
+    write_task(
+        tmp_path,
+        filename="test-task.yaml",
+        task_id="test-task-001",
+        project="clinical-suite",
+    )
+
+    result = run_once(project="clinical-suite", root=tmp_path)
+
+    assert result.ran is True
+    assert result.called_executors is True
+    assert result.ran_shell_validation is True
+    assert result.validation_execution_allowed is True
+    assert "Executed validation" in result.message
+    assert result.run_dir is not None
+
+    metadata = json.loads((result.run_dir / "run_metadata.json").read_text(encoding="utf-8"))
+    assert metadata["shell_commands_executed"] is True
+    assert metadata["executors_called"] is True
+    assert metadata["validation_execution_allowed"] is True
+    assert metadata["tool_execution"]["shell_commands_run"] is True
+
+    executor_result = json.loads((result.run_dir / "executor_result.json").read_text(encoding="utf-8"))
+    assert executor_result["executed"] is True
+    assert len(executor_result["validation_commands_run"]) == 1
+    assert executor_result["validation_commands_run"][0]["name"] == "unit"
+    assert executor_result["validation_commands_run"][0]["status"] in ("error",)
+
+    validation_log_text = (result.run_dir / "validation.log").read_text(encoding="utf-8")
+    assert "validation_executed: true" in validation_log_text or "validation_executed: True" in validation_log_text
+
+    validation_result = json.loads((result.run_dir / "validation_result.json").read_text(encoding="utf-8"))
+    assert validation_result["execution_allowed"] is True
+    assert validation_result["evidence_only"] is False
+
+    command_text = (result.run_dir / "command.txt").read_text(encoding="utf-8")
+    assert "Validation commands executed" in command_text
+    assert "python -m pytest" in command_text
+
+
+def test_validation_execution_with_approval(tmp_path: Path) -> None:
+    write_policy(tmp_path, enabled=True, require_human_approval=True)
+    ensure_queue_dirs(tmp_path)
+    write_task(
+        tmp_path,
+        filename="test-task-002.yaml",
+        task_id="test-task-002",
+    )
+
+    result = run_once(project="clinical-suite", root=tmp_path)
+
+    assert result.ran is True
+    assert result.called_executors is False
+    assert "Placeholder worker" in result.message
+    assert result.run_dir is not None
+
+    metadata = json.loads((result.run_dir / "run_metadata.json").read_text(encoding="utf-8"))
+    assert metadata["shell_commands_executed"] is False
+    assert metadata["executors_called"] is False
+
+
+def test_validation_execution_via_approval(tmp_path: Path) -> None:
+    write_policy(tmp_path, enabled=True, require_human_approval=True)
+    ensure_queue_dirs(tmp_path)
+    write_task(
+        tmp_path,
+        filename="test-task-003.yaml",
+        task_id="test-task-003",
+    )
+
+    result = run_once(project="clinical-suite", root=tmp_path)
+    assert result.ran is True
+    assert result.called_executors is False
+    assert result.run_dir is not None
+
+    approval_path = result.run_dir / "validation_execution_approval.json"
+    assert approval_path.exists()
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    assert approval["execution_approved"] is False
+
+    approval["execution_approved"] = True
+    approval["approved_by"] = "test"
+    approval_path.write_text(json.dumps(approval, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    from liaison.worker import TaskPacket, load_task_packet
+    task_path = result.run_dir / "task.yaml"
+    packet = load_task_packet(task_path)
+
+    validate_with_executor(
+        packet=packet,
+        run_dir=result.run_dir,
+        run_id=result.run_id or "",
+        root=tmp_path,
+        started_at="2026-06-10T12:00:00Z",
+    )
+
+    metadata = json.loads((result.run_dir / "run_metadata.json").read_text(encoding="utf-8"))
+    assert metadata["shell_commands_executed"] is True
