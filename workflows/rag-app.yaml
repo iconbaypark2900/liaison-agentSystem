@@ -1,0 +1,63 @@
+name: rag-app
+description: Build and validate a Retrieval-Augmented Generation (RAG) application.
+validation_profile: rag
+checks_script: checks/rag.sh
+
+principles:
+  - retrieval quality is measured against a fixed golden answer set
+  - ingestion and chunking are reproducible from declared sources
+  - eval dataset, retrieval metrics, and golden answers are versioned in-repo
+  - context budget, latency, and cost are tracked per query class
+
+phases:
+  - name: rag_plan
+    route: reviewer
+    skills:
+      - spark-flow-planning
+      - rag-design
+    approval: required
+
+  - name: corpus_prep
+    route: coder
+    skills:
+      - spark-flow-build
+      - rag-ingestion
+    artifacts:
+      - rag/retrieval_eval.yaml
+      - rag/eval_dataset.jsonl
+    approval: required
+
+  - name: retrieval_build
+    route: coder
+    skills:
+      - spark-flow-build
+      - rag-indexing
+    approval: required
+
+  - name: rag_validate
+    kind: deterministic
+    validate_profile: rag
+    skills:
+      - testing-hardening
+    approval: required
+
+  - name: rag_review
+    route: reviewer
+    skills:
+      - spark-flow-review
+      - rag-design
+    approval: required
+
+  - name: close
+    route: stable
+    skills:
+      - spark-flow-closeout
+    approval: required
+
+quality_gates:
+  required:
+    - rag/retrieval_eval.yaml declares metrics, splits, and thresholds
+    - rag/eval_dataset.jsonl and rag/golden_answers.jsonl exist and are checked in
+    - retrieval quality meets declared thresholds on the holdout split
+    - context budget, latency, and cost are within the declared SLOs
+    - human approval exists before customer release or production routing

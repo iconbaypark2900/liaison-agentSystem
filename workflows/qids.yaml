@@ -1,0 +1,67 @@
+name: qids
+description: Design, validate, and operate a QIDS (Quantum-Inspired Decision System) module.
+validation_profile: qids
+
+principles:
+  - QIDS module boundaries, inputs, and outputs are declared up front
+  - classical and quantum subroutines are tracked separately in the registry
+  - calibration and decoding analysis is reproducible from logged artifacts
+  - production routing for QIDS modules is approval-gated
+
+phases:
+  - name: qids_plan
+    route: reviewer
+    skills:
+      - spark-flow-planning
+      - qids-design
+    artifacts:
+      - qids/module_spec.yaml
+    approval: required
+
+  - name: module_design
+    route: coder
+    skills:
+      - spark-flow-build
+      - qids-design
+    artifacts:
+      - qids/inputs.yaml
+      - qids/outputs.yaml
+    approval: required
+
+  - name: calibration
+    route: qids_calibration
+    kind: remote_read_only
+    skills:
+      - nvidia-ising-review
+      - qids-design
+    approval: required
+    remote_approval: required
+
+  - name: qids_validate
+    kind: deterministic
+    validate_profile: qids
+    skills:
+      - testing-hardening
+      - scientific-validation
+    approval: required
+
+  - name: integration_review
+    route: reviewer
+    skills:
+      - spark-flow-review
+      - qids-design
+    approval: required
+
+  - name: close
+    route: stable
+    skills:
+      - spark-flow-closeout
+    approval: required
+
+quality_gates:
+  required:
+    - module_spec.yaml names inputs, outputs, and dependencies
+    - calibration results are logged and reproducible
+    - candidate module is compared against the current baseline
+    - remote execution is approval-gated and read-only by default
+    - human approval exists before any production routing change
