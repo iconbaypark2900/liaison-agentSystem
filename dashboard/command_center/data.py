@@ -1972,6 +1972,9 @@ def collect_command_center_state(
     project_detail = build_project_detail(brief_state)
     hub_workflows = build_hub_workflows_for_project(brief_state)
 
+    from dashboard.command_center.panels import build_all_panels
+    panel_data = build_all_panels(state=brief_state, root=AGENT_SYSTEM_DIR)
+
     return {
         **base,
         "selected_project": selected_project,
@@ -2030,6 +2033,7 @@ def collect_command_center_state(
         "workflow_next_action": workflow_next_action,
         "active_task_phase": active_task_phase,
         "terminal_bridge": terminal_bridge,
+        "panels": panel_data,
     }
 
 
