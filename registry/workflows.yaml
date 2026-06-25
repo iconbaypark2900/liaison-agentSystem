@@ -34,4 +34,19 @@ workflows:
       - trend-report
       - dashboard
       - close-task
-
+  rag-app:
+    role: retrieval-augmented generation application lifecycle (plan, corpus, retrieval, validate, review, close)
+  quantum-benchmarks:
+    role: quantum benchmark runs across backends and decoders (plan, setup, run, validate, analyze, close)
+  ml-research:
+    role: machine learning research experiment lifecycle (plan, data, run, validate, analyze, close)
+  frontend-app:
+    role: frontend application lifecycle (plan, scaffold, implement, validate, review, close)
+  backend-app:
+    role: backend service lifecycle (plan, scaffold, implement, validate, review, close)
+  scientific-paper:
+    role: scientific paper or technical report lifecycle (outline, evidence, draft, review, revise, approve, submit, close)
+  portfolio-optimizer:
+    role: portfolio optimization strategy lifecycle (plan, data, backtest, risk, validate, paper-trade, live, close)
+  qids:
+    role: quantum-inspired decision system module lifecycle (plan, design, calibrate, validate, integrate, close)

@@ -1,0 +1,71 @@
+name: quantum-benchmarks
+description: Run, validate, and analyze quantum benchmarks across backends and decoders.
+validation_profile: quantum
+checks_script: checks/quantum.sh
+
+principles:
+  - benchmark plan, backend registry, and results schema are declared up front
+  - experiment log is append-only and auditable
+  - calibration and decoding analysis is reproducible from logged artifacts
+  - remote backend execution remains approval-gated and read-only by default
+
+phases:
+  - name: benchmark_plan
+    route: reviewer
+    skills:
+      - spark-flow-planning
+      - cudaq-quantum-workflow
+    artifacts:
+      - quantum/quantum_config.yaml
+      - quantum/benchmark_plan.yaml
+    approval: required
+
+  - name: backend_setup
+    route: coder
+    skills:
+      - spark-flow-build
+      - cudaq-quantum-workflow
+    artifacts:
+      - quantum/backend_registry.yaml
+    approval: required
+
+  - name: benchmark_run
+    route: quantum_runner
+    kind: remote_read_only
+    skills:
+      - cudaq-quantum-workflow
+    artifacts:
+      - quantum/experiment_log.jsonl
+    approval: required
+    remote_approval: required
+
+  - name: quantum_validate
+    kind: deterministic
+    validate_profile: quantum
+    skills:
+      - testing-hardening
+      - scientific-validation
+    artifacts:
+      - quantum/results_schema.json
+    approval: required
+
+  - name: analysis_review
+    route: reviewer
+    skills:
+      - spark-flow-review
+      - scientific-validation
+    approval: required
+
+  - name: close
+    route: stable
+    skills:
+      - spark-flow-closeout
+    approval: required
+
+quality_gates:
+  required:
+    - benchmark plan names circuits, shot counts, backends, and decoders
+    - backend registry lists simulators, hardware targets, and access modes
+    - results schema matches benchmark plan columns and units
+    - experiment log is append-only and tied to run IDs
+    - human approval exists before hardware runs and result publication

@@ -1,0 +1,82 @@
+name: scientific-paper
+description: Plan, draft, review, and submit a scientific paper or technical report.
+validation_profile: scientific
+
+principles:
+  - outline, contributions, and target venue are declared up front
+  - claims are tied to reproducible experiments or cited references
+  - figure and table data are versioned alongside the manuscript
+  - co-author review and approval is logged before submission
+
+phases:
+  - name: outline
+    route: reviewer
+    skills:
+      - spark-flow-planning
+      - scientific-writing
+    artifacts:
+      - paper/outline.md
+      - paper/contributions.md
+    approval: required
+
+  - name: experiment_evidence
+    route: reviewer
+    skills:
+      - scientific-validation
+      - ml-research-design
+    artifacts:
+      - paper/evidence_index.md
+    approval: required
+
+  - name: draft
+    route: writer
+    skills:
+      - spark-flow-build
+      - scientific-writing
+    artifacts:
+      - paper/main.md
+      - paper/figures/
+    approval: required
+
+  - name: internal_review
+    route: reviewer
+    skills:
+      - spark-flow-review
+      - scientific-validation
+    approval: required
+
+  - name: revise
+    route: writer
+    optional: true
+    skills:
+      - spark-flow-build
+      - scientific-writing
+    approval: required
+
+  - name: coauthor_approval
+    route: operator
+    skills:
+      - spark-flow-approval
+    approval: required
+    human_approval: required
+
+  - name: submit
+    route: operator
+    skills:
+      - spark-flow-submission
+    approval: required
+    human_approval: required
+
+  - name: close
+    route: stable
+    skills:
+      - spark-flow-closeout
+    approval: required
+
+quality_gates:
+  required:
+    - outline names problem, contributions, and target venue
+    - evidence index links each claim to a reproducible experiment or citation
+    - internal review covers novelty, soundness, and clarity
+    - all listed co-authors approve before submission
+    - human approval exists before submission to any venue

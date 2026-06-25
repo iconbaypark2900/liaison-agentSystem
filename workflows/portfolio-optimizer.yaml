@@ -1,0 +1,81 @@
+name: portfolio-optimizer
+description: Design, validate, and operate a portfolio optimization strategy.
+validation_profile: portfolio
+
+principles:
+  - strategy, universe, rebalance cadence, and risk limits are declared up front
+  - backtests use declared costs, slippage, and survivorship rules
+  - candidate strategy is compared against the current baseline
+  - live capital allocation is always approval-gated and never auto-executed
+
+phases:
+  - name: strategy_plan
+    route: reviewer
+    skills:
+      - spark-flow-planning
+      - portfolio-research
+    artifacts:
+      - portfolio/strategy.yaml
+      - portfolio/universe.yaml
+    approval: required
+
+  - name: data_prep
+    route: coder
+    skills:
+      - spark-flow-build
+      - data-curation
+    approval: required
+
+  - name: backtest
+    route: quant_runner
+    skills:
+      - backtest-engineering
+    artifacts:
+      - portfolio/backtest_results.json
+    approval: required
+
+  - name: risk_review
+    route: reviewer
+    skills:
+      - risk-management
+      - portfolio-research
+    artifacts:
+      - portfolio/risk_report.md
+    approval: required
+
+  - name: strategy_validate
+    kind: deterministic
+    validate_profile: portfolio
+    skills:
+      - testing-hardening
+    approval: required
+
+  - name: paper_trade
+    route: paper_trader
+    optional: true
+    skills:
+      - paper-trading
+    approval: required
+    remote_approval: required
+
+  - name: live_allocation
+    route: operator
+    skills:
+      - capital-allocation
+    approval: required
+    human_approval: required
+    remote_approval: required
+
+  - name: close
+    route: stable
+    skills:
+      - spark-flow-closeout
+    approval: required
+
+quality_gates:
+  required:
+    - strategy.yaml declares objective, constraints, and risk limits
+    - backtest applies declared costs, slippage, and survivorship rules
+    - candidate strategy is compared against the current baseline on agreed metrics
+    - paper trading is run before any live capital allocation
+    - human approval exists before any live capital allocation

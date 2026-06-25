@@ -11,6 +11,8 @@
 * Phase 7: Conductor hardening
 * Phase 7B: Context hygiene hardening
 * Phase 8A: NIM remote dry-run payload builder
+* Phase 10: Workflow packs
+* Phase 11: Dashboard panels (tasks, approvals, validation, routing, context bundles, logs, budgets)
 
 ## Next
 
@@ -33,19 +35,3 @@ Promote remote result artifacts only after human approval.
 ### Phase 9 — Real ML-Intern sandbox integration
 
 Enable sandbox-only ML-Intern execution with no publishing or private-data upload.
-
-### Phase 10 — Workflow packs
-
-Add project-specific workflow packs for:
-
-* RAG apps
-* quantum benchmarks
-* ML research
-* frontend/backend apps
-* scientific papers
-* portfolio optimizer
-* QIDS modules
-
-### Phase 11 — Dashboard
-
-Build a local control panel for tasks, approvals, context bundles, validation, logs, budgets, and routing.

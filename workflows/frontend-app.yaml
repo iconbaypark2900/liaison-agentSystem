@@ -1,0 +1,60 @@
+name: frontend-app
+description: Build and validate a frontend (web/UI) application.
+validation_profile: frontend
+checks_script: checks/frontend.sh
+
+principles:
+  - package.json, build, and test commands are the contract for CI
+  - lint, test, and build steps are gated before any customer release
+  - accessibility and bundle size are tracked per change
+  - preview deploys are read-only and approval-gated
+
+phases:
+  - name: frontend_plan
+    route: reviewer
+    skills:
+      - spark-flow-planning
+      - frontend-design
+    approval: required
+
+  - name: scaffold
+    route: coder
+    skills:
+      - spark-flow-build
+      - frontend-tooling
+    approval: required
+
+  - name: implement
+    route: coder
+    skills:
+      - spark-flow-build
+      - frontend-design
+    approval: required
+
+  - name: frontend_validate
+    kind: deterministic
+    validate_profile: frontend
+    skills:
+      - testing-hardening
+    approval: required
+
+  - name: review
+    route: reviewer
+    skills:
+      - spark-flow-review
+      - frontend-design
+    approval: required
+
+  - name: close
+    route: stable
+    skills:
+      - spark-flow-closeout
+    approval: required
+
+quality_gates:
+  required:
+    - package.json declares lint, test, and build scripts
+    - npm test passes for the change set
+    - npm run build produces a clean production bundle
+    - accessibility checks pass declared thresholds
+    - human approval exists before customer release or production deploy

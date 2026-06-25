@@ -1,0 +1,68 @@
+name: ml-research
+description: Plan, run, and analyze machine learning research experiments.
+validation_profile: ml-research
+checks_script: checks/ml-research.sh
+
+principles:
+  - experiment plan, metrics, and results schema are declared before training
+  - results are reproducible from logged configs, seeds, and environment
+  - dataset provenance, licensing, and splits are documented
+  - candidate model changes are scored against the current baseline
+
+phases:
+  - name: experiment_plan
+    route: reviewer
+    skills:
+      - spark-flow-planning
+      - ml-research-design
+    artifacts:
+      - ml_research/experiment.yaml
+    approval: required
+
+  - name: data_prep
+    route: coder
+    skills:
+      - spark-flow-build
+      - dataset-curation
+    approval: required
+
+  - name: experiment_run
+    route: ml_runner
+    skills:
+      - ml-research-execution
+    artifacts:
+      - ml_research/experiment_log.jsonl
+    approval: required
+
+  - name: ml_research_validate
+    kind: deterministic
+    validate_profile: ml-research
+    skills:
+      - testing-hardening
+      - scientific-validation
+    artifacts:
+      - ml_research/metrics.yaml
+      - ml_research/results_schema.json
+    approval: required
+
+  - name: analysis_review
+    route: reviewer
+    skills:
+      - spark-flow-review
+      - ml-research-design
+      - scientific-validation
+    approval: required
+
+  - name: close
+    route: stable
+    skills:
+      - spark-flow-closeout
+    approval: required
+
+quality_gates:
+  required:
+    - experiment.yaml declares task, baseline, candidate, metrics, and seed
+    - dataset provenance, license, and split sizes are documented
+    - results_schema.json matches the columns produced in the experiment log
+    - candidate is scored against the current baseline before any routing change
+    - human approval exists before any deployment or routing change

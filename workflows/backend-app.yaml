@@ -1,0 +1,60 @@
+name: backend-app
+description: Build and validate a backend service (API, server, or microservice).
+validation_profile: backend
+checks_script: checks/backend.sh
+
+principles:
+  - API contract is declared in an openapi.* spec or equivalent
+  - tests are run from a real pytest or npm test invocation
+  - migrations and schema changes are reviewed before deploy
+  - customer data access is logged and approval-gated
+
+phases:
+  - name: backend_plan
+    route: reviewer
+    skills:
+      - spark-flow-planning
+      - backend-design
+    approval: required
+
+  - name: scaffold
+    route: coder
+    skills:
+      - spark-flow-build
+      - backend-tooling
+    approval: required
+
+  - name: implement
+    route: coder
+    skills:
+      - spark-flow-build
+      - backend-design
+    approval: required
+
+  - name: backend_validate
+    kind: deterministic
+    validate_profile: backend
+    skills:
+      - testing-hardening
+    approval: required
+
+  - name: review
+    route: reviewer
+    skills:
+      - spark-flow-review
+      - backend-design
+    approval: required
+
+  - name: close
+    route: stable
+    skills:
+      - spark-flow-closeout
+    approval: required
+
+quality_gates:
+  required:
+  - openapi.* spec is present and matches implemented routes
+  - tests/ directory exists with passing test suite
+  - schema and migration changes are reviewed
+  - access to customer or production data is logged and approval-gated
+  - human approval exists before customer release or production deploy
