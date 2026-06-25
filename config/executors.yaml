@@ -4,6 +4,7 @@ executors:
     enabled: true
     type: shell
     command: bash
+    allow_execution: true
     allow_push: false
     allow_main_branch: false
     use_litellm_route: false

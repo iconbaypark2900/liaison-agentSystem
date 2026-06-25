@@ -6,15 +6,31 @@ All executors are disabled by default and do not execute any tasks.
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import shutil
+import subprocess
 import sys
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
+
+
+@dataclass(frozen=True)
+class ExecutorResult:
+    exit_code: int
+    stdout: str
+    stderr: str
+    duration_sec: float
+    executor_id: str
+
+    def to_json(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -99,14 +115,16 @@ def build_executor_status(executor_id: str, root: Path = Path(".")) -> ExecutorS
     enabled = bool(config.get("enabled", False))
     command = [config.get("command", "")] if config.get("command") else []
     available = is_executor_available(executor_id, config)
-    execution_allowed = False  # Always false in v0.2.0 placeholder mode
+    execution_allowed = bool(config.get("allow_execution", False))
 
     if not enabled:
         reason = "Executor disabled in config"
     elif not available:
         reason = f"Binary not found in PATH: {command[0] if command else 'unknown'}"
+    elif not execution_allowed:
+        reason = "Execution not allowed in config (allow_execution: false)"
     else:
-        reason = "v0.2.0 placeholder mode: execution disabled by default"
+        reason = "Ready"
 
     capabilities = get_executor_capabilities(executor_id, config)
 
@@ -186,11 +204,123 @@ def cmd_executor_ping(args) -> int:
     return 0
 
 
+def run_executor(
+    executor_id: str,
+    args: list[str] | None = None,
+    *,
+    root: Path = Path("."),
+    timeout: int | None = None,
+    cwd: Path | str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> ExecutorResult:
+    """Run a command via the specified executor.
+
+    Args:
+        executor_id: Executor identifier (e.g. 'shell', 'opencode').
+        args: Arguments to pass to the executor binary.
+        root: Project root for config lookup.
+        timeout: Maximum execution time in seconds (default: no timeout).
+        cwd: Working directory for the subprocess.
+        env: Environment variables (merged with current env).
+
+    Returns:
+        ExecutorResult with exit code, output streams, and duration.
+
+    Raises:
+        RuntimeError: If executor is not available or execution not allowed.
+    """
+    config = get_executor_config(executor_id, root)
+    if config is None:
+        raise RuntimeError(f"Executor '{executor_id}' not configured")
+
+    status = build_executor_status(executor_id, root)
+    if not status.enabled:
+        raise RuntimeError(f"Executor '{executor_id}' is disabled")
+    if not status.available:
+        raise RuntimeError(
+            f"Executor '{executor_id}' binary not found: "
+            f"{' '.join(status.command) if status.command else 'unknown'}"
+        )
+    if not status.execution_allowed:
+        raise RuntimeError(f"Executor '{executor_id}' execution not allowed by config")
+
+    cmd = list(status.command)
+    if args:
+        cmd.extend(args)
+
+    run_env = os.environ.copy()
+    if env:
+        run_env.update(env)
+
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(cwd) if cwd else None,
+            env=run_env,
+            timeout=timeout,
+        )
+        exit_code = completed.returncode
+        stdout = completed.stdout
+        stderr = completed.stderr
+    except subprocess.TimeoutExpired as exc:
+        exit_code = -1
+        stdout = exc.stdout.decode("utf-8") if exc.stdout else ""
+        stderr = (exc.stderr.decode("utf-8") if exc.stderr else "") + f"\nTIMEOUT after {timeout}s"
+    except FileNotFoundError:
+        raise RuntimeError(f"Executor binary not found: {cmd[0]}")
+    except OSError as exc:
+        raise RuntimeError(f"Failed to run executor '{executor_id}': {exc}") from exc
+    finally:
+        duration = time.monotonic() - started
+
+    return ExecutorResult(
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr=stderr,
+        duration_sec=round(duration, 3),
+        executor_id=executor_id,
+    )
+
+
+def cmd_executor_run(args) -> int:
+    """Handle `liaison executor run <executor_id> [-- <args>...]`."""
+    try:
+        result = run_executor(
+            args.executor_id,
+            args.command_args,
+            timeout=args.timeout,
+            cwd=args.cwd,
+        )
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(result.to_json(), indent=2, sort_keys=True))
+    else:
+        print(f"Executor:  {result.executor_id}")
+        print(f"Exit code: {result.exit_code}")
+        print(f"Duration:  {result.duration_sec}s")
+        if result.stdout:
+            print("--- stdout ---")
+            print(result.stdout.rstrip())
+        if result.stderr:
+            print("--- stderr ---")
+            print(result.stderr.rstrip())
+        if not result.stdout and not result.stderr:
+            print("(no output)")
+
+    return 0
+
+
 def register_executor_subparser(subparsers) -> None:
     """Register `liaison executor ...` commands."""
     parser = subparsers.add_parser(
         "executor",
-        help="Manage executor adapters (list, ping).",
+        help="Manage executor adapters (list, ping, run).",
     )
     executor_subparsers = parser.add_subparsers(
         dest="executor_command",
@@ -225,3 +355,37 @@ def register_executor_subparser(subparsers) -> None:
         help="Emit JSON output.",
     )
     ping_parser.set_defaults(func=cmd_executor_ping)
+
+    # Run command
+    run_parser = executor_subparsers.add_parser(
+        "run",
+        help="Run a command via an executor.",
+    )
+    run_parser.add_argument(
+        "executor_id",
+        choices=["shell", "opencode", "codex", "claude_code", "ml_intern"],
+        help="Executor to run.",
+    )
+    run_parser.add_argument(
+        "command_args",
+        nargs=argparse.REMAINDER,
+        help="Arguments to pass to the executor (prefix with -- to disambiguate).",
+    )
+    run_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="Maximum execution time in seconds.",
+    )
+    run_parser.add_argument(
+        "--cwd",
+        type=str,
+        default=None,
+        help="Working directory for the subprocess.",
+    )
+    run_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit JSON output.",
+    )
+    run_parser.set_defaults(func=cmd_executor_run)

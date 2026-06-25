@@ -1,5 +1,6 @@
 # Runtime workflow state
 .spark-flow/
+.liaison/
 
 # Runtime logs
 logs/
