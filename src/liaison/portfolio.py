@@ -64,13 +64,7 @@ from .task_generation import (
     validate_portfolio,
 )
 from .task_templates import TaskTemplateError
-from .worker import (
-    WorkerRuntimeError,
-    register_evidence_subparser,
-    register_gate_subparser,
-    register_worker_subparser,
-)
-from .executors import register_executor_subparser
+from .worker import WorkerRuntimeError
 
 
 VALID_HOSTS = ("dgx_spark", "evox2_windows")
@@ -394,38 +388,24 @@ def print_json(payload: Any) -> None:
 def build_parser() -> argparse.ArgumentParser:
     """Build a standalone parser.
 
-    Existing Liaison CLI can either use this directly or call
-    `register_portfolio_subparser` on its own root parser.
+    .. deprecated::
+        Use :func:`liaison.cli.build_root_parser` instead. This wrapper
+        is kept for backward compatibility with callers that import
+        ``build_parser`` from ``liaison.portfolio``.
     """
-    parser = argparse.ArgumentParser(
-        prog="liaison",
-        description="Liaison local-agent control plane CLI.",
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    register_portfolio_subparser(subparsers)
-    register_worker_subparser(subparsers)
-    register_evidence_subparser(subparsers)
-    register_gate_subparser(subparsers)
-    register_executor_subparser(subparsers)
-    return parser
+    from liaison.cli import build_root_parser
+
+    return build_root_parser()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Standalone CLI entrypoint for portfolio command stubs."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
+    """Standalone CLI entrypoint for portfolio command stubs.
 
-    try:
-        return int(args.func(args))
-    except (
-        PortfolioRegistryError,
-        PortfolioProfileError,
-        TaskTemplateError,
-        TaskGenerationError,
-        WorkerRuntimeError,
-    ) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+    Delegates to :func:`liaison.cli.main` for the unified root CLI.
+    """
+    from liaison.cli import main as cli_main
+
+    return cli_main(argv)
 
 
 if __name__ == "__main__":
