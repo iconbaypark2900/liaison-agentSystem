@@ -1,6 +1,6 @@
 """Workstation project profile loading for Liaison v0.2.0.
 
-This module is an implementation stub for:
+Implements the profile layer described in:
     docs/v0.2.0/PORTFOLIO_TASK_GENERATION.md
 
 Responsibilities:
@@ -9,7 +9,7 @@ Responsibilities:
     - Merge project registry fields with workstation defaults.
     - Enforce "stricter safety wins" behavior.
 
-CLI integration TODOs:
+CLI integration:
     - Used by `liaison portfolio validate`.
     - Used by `liaison portfolio generate-tasks`.
 """

@@ -1,6 +1,6 @@
 """Portfolio task generation for Liaison v0.2.0.
 
-This module is an implementation stub for:
+Implements the generation layer described in:
     docs/v0.2.0/PORTFOLIO_TASK_GENERATION.md
 
 Responsibilities:
@@ -11,11 +11,11 @@ Responsibilities:
     - Render dry-run output.
     - Write generated tasks to `.liaison/tasks/backlog/`.
 
-CLI integration TODOs:
-    - Wire `generate_tasks(...)` to `liaison portfolio generate-tasks`.
-    - Wire `list_portfolio(...)` to `liaison portfolio list`.
-    - Wire `portfolio_counts_json(...)` to `liaison portfolio counts --json`.
-    - Wire `validate_portfolio(...)` to `liaison portfolio validate`.
+CLI integration:
+    - `generate_tasks(...)` wired to `liaison portfolio generate-tasks`.
+    - `list_portfolio(...)` wired to `liaison portfolio list`.
+    - `portfolio_counts_json(...)` wired to `liaison portfolio counts --json`.
+    - `validate_portfolio(...)` wired to `liaison portfolio validate`.
 """
 
 from __future__ import annotations

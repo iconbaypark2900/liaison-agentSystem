@@ -4,15 +4,21 @@ description: >
   Reporter-first workflow for tradeFluxsimulator archive inspection and
   incremental migration into the Sigma trading platform.
 layer: L1
-status: stub
-note: >
-  Declarative scaffold only — no auto-execution. Proves the reporter pattern
-  for Sigma before scaling to full integration slices in L3/L4.
+status: actionable
+
+principles:
+  - archive inspection is read-only and hermes-led
+  - module validation runs checks/sigma.sh before any merge consideration
+  - each slice produces a hermes report and a validation artifact
+  - L4 merge requires human approval and a clean validation gate
 
 phases:
   - id: archive-inspect
     label: Archive inspection (read-only)
+    route: reviewer
     agent: hermes
+    skills:
+      - spark-flow-planning
     liaison_commands:
       - liaison init sigma-tfs-<n> "<slice goal>"
       - liaison snapshot --show
@@ -20,21 +26,45 @@ phases:
       - liaison decision "<operator scope decision>"
     artifacts:
       - hermes-report.md
+    approval: required
 
   - id: module-validate
     label: Module validation
+    kind: deterministic
+    validate_profile: sigma
     agent: hermes
+    skills:
+      - testing-hardening
     liaison_commands:
       - liaison validate --profile sigma
       - liaison gate --show
     artifacts:
       - test.sigma.md
+    approval: required
+
+  - id: review
+    label: Review
+    route: reviewer
+    skills:
+      - spark-flow-review
+    approval: required
 
   - id: closeout
     label: Reporter closeout
+    route: stable
     agent: operator
+    skills:
+      - spark-flow-closeout
     liaison_commands:
       - liaison close-task --summary "<outcome; next steps for L4 merge>"
+    approval: required
+
+quality_gates:
+  required:
+    - hermes report covers archive structure, dependencies, and migration risks
+    - checks/sigma.sh passes with at least 200 tests
+    - validation gate is not blocked before closeout
+    - human approval exists before L4 merge consideration
 
 validation_profile: sigma
 checks_script: checks/sigma.sh

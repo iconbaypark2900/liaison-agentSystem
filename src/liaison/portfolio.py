@@ -1,6 +1,7 @@
-"""CLI command stubs for Liaison portfolio operations.
+"""Portfolio CLI commands for Liaison v0.2.0.
 
-This module wires the v0.2.0 portfolio task-generation stubs to a CLI surface.
+This module implements the portfolio subcommand group (list, counts,
+validate, generate-tasks) and registers it on the unified root CLI.
 
 Implemented command group:
 
@@ -399,7 +400,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Standalone CLI entrypoint for portfolio command stubs.
+    """CLI entrypoint for portfolio commands.
 
     Delegates to :func:`liaison.cli.main` for the unified root CLI.
     """

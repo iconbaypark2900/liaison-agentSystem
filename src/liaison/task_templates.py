@@ -1,6 +1,6 @@
 """Task template loading, validation, and rendering for Liaison v0.2.0.
 
-This module is an implementation stub for:
+Implements the template layer described in:
     docs/v0.2.0/PORTFOLIO_TASK_GENERATION.md
 
 Responsibilities:
@@ -9,8 +9,9 @@ Responsibilities:
     - Render Jinja-like placeholders without introducing a Jinja dependency.
     - Validate generated task packets before writing them.
 
-The placeholder renderer intentionally supports a small safe subset. TODO: replace
-with a controlled template utility if the repository already has one.
+The placeholder renderer intentionally supports a small safe subset
+({{ variable }} substitution only). This is a deliberate security boundary:
+templates cannot inject logic, conditionals, or loops.
 """
 
 from __future__ import annotations
