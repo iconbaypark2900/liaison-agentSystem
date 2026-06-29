@@ -1,10 +1,18 @@
-"""Safe placeholder worker runtime for Liaison v0.2.0.
+"""Worker runtime for Liaison v0.2.0.
 
-The v0.2.0 worker is intentionally evidence-only. It reads one backlog task,
-locks it by moving it to the active queue, writes auditable placeholder run
-artifacts, and moves the task to review_required. It does not call models,
-executors, shell validation commands, deployment tools, trading systems, or
-promotion approval flows.
+The worker reads one backlog task, locks it by moving it to the active queue,
+writes auditable run artifacts, and moves the task to review_required.
+
+By default (policies/validation_execution.yaml enabled=false), the worker
+writes placeholder evidence artifacts only. When the policy is enabled and
+human approval is granted, the worker runs validation commands and check
+scripts via the shell executor, overwriting placeholder artifacts with real
+output.
+
+Safety boundaries (always enforced):
+    - No model calls, branch creation, push, deploy, or trade.
+    - No production/customer/live flags set to true.
+    - All promotion requires human review of evidence artifacts.
 """
 
 from __future__ import annotations

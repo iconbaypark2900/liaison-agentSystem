@@ -1,7 +1,8 @@
 """Executor adapters for Liaison v0.2.0.
 
-This module provides stub adapters for shell, opencode, codex, and claude_code executors.
-All executors are disabled by default and do not execute any tasks.
+This module provides adapters for shell, opencode, codex, claude_code, and
+ml_intern executors. The shell executor is enabled for execution; others
+are gated by config (allow_execution) and binary availability.
 """
 
 from __future__ import annotations

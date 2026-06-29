@@ -1,6 +1,6 @@
 """Portfolio registry loading and validation for Liaison v0.2.0.
 
-This module is an implementation stub for:
+Implements the registry layer described in:
     docs/v0.2.0/PORTFOLIO_TASK_GENERATION.md
 
 Responsibilities:
@@ -9,9 +9,9 @@ Responsibilities:
     - Parse merge-source and archive exclusions.
     - Validate portfolio counts.
     - Ensure merge/archive projects are excluded from active automation.
-    - Provide project lookup helpers for future CLI commands.
+    - Provide project lookup helpers for CLI commands.
 
-CLI integration TODOs:
+CLI integration:
     - `liaison portfolio list`
     - `liaison portfolio list --host <host>`
     - `liaison portfolio counts`
