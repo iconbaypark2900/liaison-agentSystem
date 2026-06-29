@@ -34,7 +34,7 @@ def test_clinical_suite_reporter_auto_advance():
 
 
 def test_tier_c_fallback():
-    plan = load_project_plan("materialScience")
+    plan = load_project_plan("tradeflux_cbc")
     assert plan is not None
     assert plan["tier"] == "C"
     assert plan["pattern"] is None

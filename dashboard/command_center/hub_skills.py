@@ -25,7 +25,13 @@ def _subprocess_env() -> dict[str, str]:
 
 
 def _expand(path: str) -> Path:
-    return Path(path.replace("~/", str(Path.home()) + "/"))
+    expanded = path.replace("~/", str(Path.home()) + "/")
+    import os
+    expanded = os.path.expandvars(expanded)
+    if "$" in expanded:
+        from liaison_paths import AGENT_SYSTEM_DIR
+        expanded = expanded.replace("$LIAISON_ROOT", str(AGENT_SYSTEM_DIR))
+    return Path(expanded)
 
 
 def _read_skill_frontmatter(skill_md: Path) -> dict[str, str]:
