@@ -95,12 +95,16 @@ def test_missing_binary_does_not_crash() -> None:
 
 
 def test_execution_allowed_by_config() -> None:
-    for executor_id in ["opencode", "codex", "claude_code", "ml_intern"]:
+    for executor_id in ["opencode", "codex", "claude_code"]:
         status = build_executor_status(executor_id, PROJECT_ROOT)
         assert status.execution_allowed is False, f"{executor_id} should have execution_allowed=False"
     # shell is explicitly allowed in config
     status = build_executor_status("shell", PROJECT_ROOT)
     assert status.execution_allowed is True
+    # ml_intern has allow_execution: true (Phase 9) but is still disabled
+    status = build_executor_status("ml_intern", PROJECT_ROOT)
+    assert status.execution_allowed is True
+    assert status.enabled is False
 
 
 def test_no_subprocess_task_execution_occurs() -> None:
@@ -115,10 +119,13 @@ def test_no_subprocess_task_execution_occurs() -> None:
 
 
 def test_no_production_flags_changed() -> None:
-    # Only shell is configured for execution; others remain locked
+    # shell and ml_intern have allow_execution: true; others remain locked
     for status in list_executors(PROJECT_ROOT):
         if status.executor_id == "shell":
             assert status.execution_allowed is True
+        elif status.executor_id == "ml_intern":
+            assert status.execution_allowed is True
+            assert status.enabled is False
         else:
             assert status.execution_allowed is False
 
@@ -160,7 +167,8 @@ def test_ping_json_output(capsys) -> None:
 def test_ml_intern_disabled_by_default() -> None:
     status = build_executor_status("ml_intern", PROJECT_ROOT)
     assert status.enabled is False
-    assert status.execution_allowed is False
+    assert status.execution_allowed is True  # allow_execution: true for Phase 9
+    assert "disabled" in status.reason
 
 
 def test_executor_capabilities() -> None:

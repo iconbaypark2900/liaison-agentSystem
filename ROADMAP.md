@@ -11,27 +11,19 @@
 * Phase 7: Conductor hardening
 * Phase 7B: Context hygiene hardening
 * Phase 8A: NIM remote dry-run payload builder
+* Phase 8B: Real NIM endpoint execution (gated by NVIDIA_API_KEY + approval + budget)
+* Phase 8C: Remote result approval and handoff
+* Phase 9: Real ML-Intern sandbox integration (gated by ml-intern tool + sandbox enforcement)
 * Phase 10: Workflow packs
 * Phase 11: Dashboard panels (tasks, approvals, validation, routing, context bundles, logs, budgets)
 
 ## Next
 
-### Phase 8B — Real NIM endpoint execution
+All planned phases are complete. The system is ready for activation when
+external dependencies are available:
 
-Add real read-only NIM calls behind:
-
-* approved remote request
-* capability validation
-* provider validation
-* budget check
-* NVIDIA_API_KEY presence
-* outbox-only output
-* JSONL logging
-
-### Phase 8C — Remote result approval and handoff
-
-Promote remote result artifacts only after human approval.
-
-### Phase 9 — Real ML-Intern sandbox integration
-
-Enable sandbox-only ML-Intern execution with no publishing or private-data upload.
+* **NVIDIA_API_KEY** — set this env var and create approved request files to
+  enable real NIM endpoint calls via `liaison remote run <capability>`
+* **ml-intern** — install the CLI tool and set `ml_intern.enabled: true` in
+  `config/executors.yaml` to enable sandbox research runs via
+  `liaison research run ml_intern`

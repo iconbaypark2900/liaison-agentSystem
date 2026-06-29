@@ -22,6 +22,8 @@ from liaison.portfolio import (
     TaskGenerationError,
     TaskTemplateError,
 )
+from liaison.remote import RemoteExecutionError
+from liaison.research import ResearchExecutionError
 from liaison.worker import (
     WorkerRuntimeError,
     register_evidence_subparser,
@@ -66,6 +68,15 @@ def _register_all_subparsers(
     register_gate_subparser(subparsers)
     register_executor_subparser(subparsers)
 
+    from liaison.remote import register_remote_subparser
+    register_remote_subparser(subparsers)
+
+    from liaison.research import register_research_subparser
+    register_research_subparser(subparsers)
+
+    from liaison.approval import register_remote_approval_subparser
+    register_remote_approval_subparser(subparsers)
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the unified Liaison CLI."""
@@ -82,6 +93,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         TaskTemplateError,
         TaskGenerationError,
         WorkerRuntimeError,
+        RemoteExecutionError,
+        ResearchExecutionError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

@@ -33,5 +33,6 @@ executors:
     enabled: false
     type: external_supervisor
     command: ml-intern
+    allow_execution: true
     allow_push: false
     allow_main_branch: false
