@@ -1160,21 +1160,36 @@ def _run_security_check(
         return None
 
 
-def validate_with_executor(
-    *, packet: TaskPacket, run_dir: Path, run_id: str, root: Path, started_at: str
-) -> None:
-    policy = load_validation_execution_policy(root)
+@dataclass(frozen=True)
+class ValidationRunOutcome:
+    """Carries results from validation + security execution between helper functions."""
+    validation_results: list[dict[str, Any]]
+    all_passed: bool
+    security_result: dict[str, Any] | None
+    security_passed: bool
+    completed_at: str
+    repo_cwd: Path | None
+
+
+def _validation_execution_gate(policy: dict[str, Any], run_dir: Path) -> bool:
+    """Check if validation execution is enabled and approved. Returns True if execution should proceed."""
     if not policy.get("enabled", False):
-        return
+        return False
     if policy.get("require_human_approval", True):
         approval_path = run_dir / "validation_execution_approval.json"
         if approval_path.exists():
             approval = read_json_file(approval_path)
             if not approval.get("execution_approved", False):
-                return
+                return False
         else:
-            return
+            return False
+    return True
 
+
+def _run_validation_and_security(
+    *, packet: TaskPacket, root: Path, run_dir: Path, started_at: str
+) -> ValidationRunOutcome:
+    """Run validation commands and security check, write validation.log and security.log."""
     repo_cwd = _resolve_repo_cwd(packet.data)
     completed_at = utc_now_iso()
 
@@ -1203,34 +1218,12 @@ def validate_with_executor(
     }, sort_keys=False)
     (run_dir / "validation.log").write_text(validation_log, encoding="utf-8")
 
-    validation_result_payload = {
-        "run_id": run_id,
-        "task_id": packet.task_id,
-        "project": packet.project,
-        "task_type": packet.task_type,
-        "status": "passed" if all_passed else "failed",
-        "execution_allowed": True,
-        "commands_executed": len(validation_results),
-        "commands_planned": len(validation_results),
-        "passed": all_passed,
-        "evidence_only": False,
-        "results": validation_results,
-    }
-    (run_dir / "validation_result.json").write_text(
-        json.dumps(validation_result_payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    (run_dir / "validation_result.md").write_text(
-        _format_validation_result_md(validation_result_payload),
-        encoding="utf-8",
-    )
-
     security_result = _run_security_check(root=root, repo_cwd=repo_cwd)
     if security_result:
         security_log_lines = [
             "# Security Log",
-            f"Run ID: {run_id}",
-            f"Script: checks/security.sh",
+            f"Run ID: {run_dir.name}",
+            "Script: checks/security.sh",
             f"Exit code: {security_result['exit_code']}",
             "",
             "## Output",
@@ -1242,13 +1235,55 @@ def validate_with_executor(
         security_log_lines.append(f"Security check {'PASSED' if security_result['passed'] else 'FAILED'}")
         (run_dir / "security.log").write_text("\n".join(security_log_lines) + "\n", encoding="utf-8")
 
+    security_passed = security_result["passed"] if security_result else False
+
+    return ValidationRunOutcome(
+        validation_results=validation_results,
+        all_passed=all_passed,
+        security_result=security_result,
+        security_passed=security_passed,
+        completed_at=completed_at,
+        repo_cwd=repo_cwd,
+    )
+
+
+def _write_validation_evidence_artifacts(
+    *, run_dir: Path, packet: TaskPacket, run_id: str, outcome: ValidationRunOutcome
+) -> None:
+    """Write validation_result, executor_result, command.txt, stdout/stderr, data_quality, compliance."""
+    vr = outcome.validation_results
+    all_passed = outcome.all_passed
+    security_result = outcome.security_result
+
+    validation_result_payload = {
+        "run_id": run_id,
+        "task_id": packet.task_id,
+        "project": packet.project,
+        "task_type": packet.task_type,
+        "status": "passed" if all_passed else "failed",
+        "execution_allowed": True,
+        "commands_executed": len(vr),
+        "commands_planned": len(vr),
+        "passed": all_passed,
+        "evidence_only": False,
+        "results": vr,
+    }
+    (run_dir / "validation_result.json").write_text(
+        json.dumps(validation_result_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "validation_result.md").write_text(
+        _format_validation_result_md(validation_result_payload),
+        encoding="utf-8",
+    )
+
     executor_payload = {
         "run_id": run_id,
         "task_id": packet.task_id,
         "executed": True,
         "executor": "shell",
-        "shell_commands_run": [r["command"] for r in validation_results],
-        "validation_commands_run": validation_results,
+        "shell_commands_run": [r["command"] for r in vr],
+        "validation_commands_run": vr,
         "reason": "Validation commands executed via shell executor",
     }
     (run_dir / "executor_result.json").write_text(
@@ -1257,16 +1292,16 @@ def validate_with_executor(
     )
 
     cmd_lines = ["Validation commands executed via shell executor:"]
-    for r in validation_results:
+    for r in vr:
         cmd_lines.append(f"  $ {r['command']}")
     cmd_lines.append(f"All passed: {all_passed}")
     if security_result:
         cmd_lines.append(f"Security check passed: {security_result['passed']}")
     (run_dir / "command.txt").write_text("\n".join(cmd_lines) + "\n", encoding="utf-8")
 
-    stdout_parts = []
-    stderr_parts = []
-    for r in validation_results:
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    for r in vr:
         if r["stdout"]:
             stdout_parts.append(f"--- {r['name']} (exit {r['exit_code']}) ---")
             stdout_parts.append(r["stdout"].rstrip())
@@ -1280,13 +1315,16 @@ def validate_with_executor(
         if security_result["stderr"]:
             stderr_parts.append("--- security check ---")
             stderr_parts.append(security_result["stderr"].rstrip())
-    (run_dir / "stdout.log").write_text("\n".join(stdout_parts) + "\n" if stdout_parts else "(no stdout)\n", encoding="utf-8")
-    (run_dir / "stderr.log").write_text("\n".join(stderr_parts) + "\n" if stderr_parts else "(no stderr)\n", encoding="utf-8")
+    (run_dir / "stdout.log").write_text(
+        "\n".join(stdout_parts) + "\n" if stdout_parts else "(no stdout)\n", encoding="utf-8"
+    )
+    (run_dir / "stderr.log").write_text(
+        "\n".join(stderr_parts) + "\n" if stderr_parts else "(no stderr)\n", encoding="utf-8"
+    )
 
-    security_passed = security_result["passed"] if security_result else False
     dq_lines = [
         f"Data quality validation for task {packet.task_id}.",
-        f"Validation commands executed: {len(validation_results)}.",
+        f"Validation commands executed: {len(vr)}.",
         f"All passed: {all_passed}.",
     ]
     (run_dir / "data_quality.log").write_text("\n".join(dq_lines) + "\n", encoding="utf-8")
@@ -1298,14 +1336,24 @@ def validate_with_executor(
         f"- Project: {packet.project}",
         "- Validation executed: True",
         f"- Validation passed: {all_passed}",
-        f"- Security check passed: {security_passed}",
+        f"- Security check passed: {outcome.security_passed}",
         "- Commands were run via shell executor.",
         "- Production/customer/live flags remain False.",
         "- Human approval required for promotion.",
     ]
     (run_dir / "compliance.md").write_text("\n".join(compliance_lines) + "\n", encoding="utf-8")
 
-    promotion_gate = {
+
+def _write_promotion_gate_and_debrief(
+    *, run_dir: Path, packet: TaskPacket, run_id: str, outcome: ValidationRunOutcome
+) -> None:
+    """Write promotion_gate.json, debrief.md, and update run_metadata.json."""
+    all_passed = outcome.all_passed
+    security_passed = outcome.security_passed
+    vr = outcome.validation_results
+    security_result = outcome.security_result
+
+    promotion_gate: dict[str, Any] = {
         "run_id": run_id,
         "task_id": packet.task_id,
         "project": packet.project,
@@ -1355,10 +1403,13 @@ def validate_with_executor(
         "",
         "## Commands run",
     ]
-    for r in validation_results:
+    for r in vr:
         debrief_lines.append(f"- {r['name']}: {r['status']} (exit {r['exit_code']}, {r['duration_sec']}s)")
     if security_result:
-        debrief_lines.append(f"- security check: {'passed' if security_result['passed'] else 'failed'} (exit {security_result['exit_code']})")
+        debrief_lines.append(
+            f"- security check: {'passed' if security_result['passed'] else 'failed'} "
+            f"(exit {security_result['exit_code']})"
+        )
     debrief_lines.extend([
         "",
         "## Validation results",
@@ -1383,9 +1434,32 @@ def validate_with_executor(
     metadata["tool_execution"]["executor_invoked"] = True
     metadata["tool_execution"]["shell_commands_run"] = True
     metadata["tool_execution"]["validation_commands_run"] = True
-    (metadata_path).write_text(
+    metadata_path.write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+    )
+
+
+def validate_with_executor(
+    *, packet: TaskPacket, run_dir: Path, run_id: str, root: Path, started_at: str
+) -> None:
+    """Run validation commands and security checks via shell executor when policy allows.
+
+    Overwrites placeholder artifacts with real execution results.
+    When the policy is disabled or approval is missing, this is a no-op.
+    """
+    policy = load_validation_execution_policy(root)
+    if not _validation_execution_gate(policy, run_dir):
+        return
+
+    outcome = _run_validation_and_security(
+        packet=packet, root=root, run_dir=run_dir, started_at=started_at,
+    )
+    _write_validation_evidence_artifacts(
+        run_dir=run_dir, packet=packet, run_id=run_id, outcome=outcome,
+    )
+    _write_promotion_gate_and_debrief(
+        run_dir=run_dir, packet=packet, run_id=run_id, outcome=outcome,
     )
 
 
