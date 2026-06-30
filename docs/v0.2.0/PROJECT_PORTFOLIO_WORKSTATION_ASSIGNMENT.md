@@ -7,7 +7,7 @@ portfolio registry tracks all projects and their host assignments.
 
 ## Portfolio Registry
 
-`registry/project_registry.active.yaml` contains 41 registered projects across
+`config/project_registry.active.yaml` contains 41 registered projects across
 two workstations.
 
 ### Project Entry Structure
@@ -29,9 +29,9 @@ projects:
 
 | File | Purpose |
 |------|---------|
-| `registry/project_registry.active.yaml` | Active projects (41 entries) |
-| `registry/project_registry.archives.yaml` | Archived projects |
-| `registry/project_registry.merge_sources.yaml` | Merge source mappings |
+| `config/project_registry.active.yaml` | Active projects (41 entries) |
+| `config/project_registry.archives.yaml` | Archived projects |
+| `config/project_registry.merge_sources.yaml` | Merge source mappings |
 | `registry/repos.yaml` | Repo paths and metadata |
 | `registry/project_plans.yaml` | Per-project plans, workflows, validation |
 

@@ -15,17 +15,15 @@ disabled, functions return gracefully without making network calls.
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
-import sys
 import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 
 import yaml
 

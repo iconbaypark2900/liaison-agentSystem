@@ -128,9 +128,10 @@ def test_check_budget_empty_log(tmp_path: Path) -> None:
 
 
 def test_check_budget_with_existing_spend(tmp_path: Path) -> None:
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    now_iso = "2026-06-29T12:00:00Z"
     log_path = log_dir / "remote_call_log.jsonl"
     log_path.write_text(
         json.dumps({"estimated_cost_usd": 1.5, "timestamp": now_iso}) + "\n",

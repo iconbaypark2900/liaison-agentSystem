@@ -10,12 +10,12 @@ skills:
     owner: hermes
     use_for: bounded failure investigation
   nvidia-ising-review:
-    owner: agent-system
+    owner: liaison
     use_for: quantum calibration review context
   testing-hardening:
-    owner: agent-system
+    owner: liaison
     use_for: validation and test quality checks
   synthetic-data-designer:
-    owner: agent-system
+    owner: liaison
     use_for: schema-first synthetic dataset design, seed expansion, validation planning, and data-flywheel dataset generation reports
 

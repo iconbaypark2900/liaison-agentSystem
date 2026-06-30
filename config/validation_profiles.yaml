@@ -71,3 +71,20 @@ profiles:
 
   data-flywheel:
     script: checks/data-flywheel.sh
+
+  portfolio:
+    script: checks/python.sh
+    required_files:
+      - portfolio/strategy.yaml
+      - portfolio/backtest_results.json
+
+  qids:
+    script: checks/quantum.sh
+    required_files:
+      - qids/module_spec.yaml
+
+  scientific:
+    script: checks/python.sh
+    required_files:
+      - paper/outline.md
+      - paper/main.md
