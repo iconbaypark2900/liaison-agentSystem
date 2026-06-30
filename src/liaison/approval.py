@@ -11,7 +11,6 @@ All transitions are logged to logs/remote_approval_log.jsonl.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from dataclasses import asdict, dataclass

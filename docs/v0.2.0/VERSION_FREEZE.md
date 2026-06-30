@@ -20,7 +20,7 @@ The following are **frozen** for v0.2.0 and will not change without a version bu
 | Required run artifacts | Frozen | 20 artifacts listed in `REQUIRED_RUN_ARTIFACTS` |
 | Validation profiles | Frozen | `config/validation_profiles.yaml` structure |
 | Executor adapter interface | Frozen | `run_executor()`, `ExecutorResult`, `ExecutorStatus` |
-| Portfolio registry schema | Frozen | `registry/project_registry.active.yaml` |
+| Portfolio registry schema | Frozen | `config/project_registry.active.yaml` |
 | CLI subcommand groups | Frozen | portfolio, worker, evidence, gate, executor |
 | Phase routing schema | Frozen | `registry/phase_routing.yaml` |
 

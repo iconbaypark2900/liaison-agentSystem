@@ -10,7 +10,7 @@ task YAML files to the backlog queue.
 ## Generation Flow
 
 ```
-1. Load project registry (registry/project_registry.active.yaml)
+1. Load project registry (config/project_registry.active.yaml)
 2. Filter by host, project, or limit
 3. For each project:
    a. Determine task types (audit, security, release-gap, calibration, validation)
