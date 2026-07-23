@@ -37,8 +37,11 @@ DEMO_TASKS = [
 def cmd_run(args: argparse.Namespace) -> None:
     from reflexion_dspy.agent import ReflexionAgent
 
-    model = configure_dspy(prefer_local=True, temperature=0.3)
-    print(f"Model: {model}\n")
+    # capability_routes.yaml: detect use_for from task
+    from reflexion_dspy.rules import capability_router
+    capability, _ = capability_router().route_task(args.task)
+    model = configure_dspy(use_for=capability, temperature=0.3)
+    print(f"Model: {model} | Capability: {capability}\n")
 
     registry = MCPToolRegistry()
     agent = ReflexionAgent(
@@ -95,7 +98,7 @@ def cmd_optimize(args: argparse.Namespace) -> None:
         )
         return
 
-    model = configure_dspy(prefer_local=True)
+    model = configure_dspy(use_for="implementation")
     registry = MCPToolRegistry()
     agent = ReflexionAgent(tool_registry=registry, verbose=False)
 
