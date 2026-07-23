@@ -66,3 +66,11 @@ agents:
     launch: liaison init --workflow data-flywheel
     handoff_guide: policies/data-flywheel-policy.md
     hub_docs: ~/spark/docs/local-agents/liaison
+  reflexion_dspy:
+    role: self-improving agent with Reflexion episodic memory + DSPy optimizer. Uses 295+ MCP tools across 31 servers for research, code, trading, quantum, and more.
+    output_contract: agent_result
+    status: active
+    launch: python -m reflexion_dspy.cli run "<task>"
+    launch_note: "direct — runs autonomously, no phase required. Use 'optimize' sub-command after 10+ traces."
+    handoff_guide: reflexion_dspy/README.md
+    hub_docs: reflexion_dspy/__init__.py

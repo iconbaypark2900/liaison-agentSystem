@@ -35,3 +35,11 @@ workflows:
       - dashboard
       - close-task
 
+  reflexion-dspy:
+    role: self-improving agent loop with Reflexion + DSPy compilation
+    commands:
+      - run          # python -m reflexion_dspy.cli run "<task>"
+      - optimize     # python -m reflexion_dspy.cli optimize --strategy mipro
+      - history      # show trace & reflection stats
+      - tools        # list 295+ available MCP tools
+      - demo         # run built-in demo task
