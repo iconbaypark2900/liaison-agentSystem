@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""
+reflexion-agent — self-improving liaison reporter-mode participant.
+
+Run from any project repo that has a .spark-flow/ task directory.
+
+Examples:
+  reflexion-agent projects                              # list all registered repos
+  reflexion-agent status                                # show task state in cwd
+  reflexion-agent attach rag-eval-001 plan --domain rag
+  reflexion-agent reflect rag-eval-001 plan --reason "missing acceptance criteria"
+  reflexion-agent attach rag-eval-001 plan --domain rag   # retries with rejection context
+  reflexion-agent approve rag-eval-001 plan
+  reflexion-agent optimize                              # compile from approved traces
+  reflexion-agent run "Search arxiv for RAG evaluation papers"  # standalone
+"""
+import sys
+import os
+from pathlib import Path
+
+# Add liaison-agentSystem to path
+_root = Path(__file__).resolve().parent.parent
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
+
+# Auto-load HF token
+_env = _root.parent / "chat-ui" / ".env.local"
+if _env.exists():
+    for _line in _env.read_text().splitlines():
+        if _line.startswith("HF_TOKEN="):
+            os.environ.setdefault("HF_TOKEN", _line.split("=", 1)[1].strip())
+
+from reflexion_dspy.cli import main
+main()
