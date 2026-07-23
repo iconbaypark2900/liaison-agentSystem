@@ -24,6 +24,7 @@ Self-improvement happens at two timescales:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from dataclasses import dataclass, field
@@ -38,6 +39,13 @@ from .memory import (
     load_reflections,
     save_reflection,
     save_trace,
+)
+from .rules import (
+    capability_router,
+    budget_guard,
+    write_objective,
+    write_to_outbox,
+    approve_artifact,
 )
 from .tools import MCPToolRegistry, format_tool_list
 
@@ -128,6 +136,7 @@ class Executor(dspy.Module):
         plan: str,
         reflections: str,
         max_tool_calls: int = 8,
+        task_id: str = "unknown",
     ) -> tuple[str, list[dict]]:
         # Let LM decide which tools to call via ReAct-style loop
         tool_calls: list[dict] = []
@@ -161,7 +170,7 @@ class Executor(dspy.Module):
             except json.JSONDecodeError:
                 args = {}
 
-            result = self.registry.call(tool_name, **args)
+            result = self.registry.call(tool_name, task_id=task_id, **args)
             call_record = {"tool": tool_name, "args": args, "result": result[:500]}
             tool_calls.append(call_record)
             call_count += 1
@@ -257,6 +266,18 @@ class ReflexionAgent(dspy.Module):
             print(msg, flush=True)
 
     def forward(self, task: str, context: str = "") -> AgentResult:
+        # ── capability_routes.yaml: route task to right capability ────────────
+        cap_router = capability_router()
+        capability, cap_spec = cap_router.route_task(task)
+        remote_allowed = cap_router.remote_allowed(capability)
+
+        # Generate a stable task_id for logging
+        task_id = hashlib.md5(f"{task}{time.time()}".encode()).hexdigest()[:8]
+
+        # ── closed-feedback-policy.md: record objective ───────────────────────
+        write_objective(task_id, task, capability)
+        self._log(f"[capability_routes.yaml] Routed to: {capability}")
+
         # Connect tools if not already connected
         if not self.registry._initialized:
             self._log("Connecting to MCP gateway...")
@@ -282,6 +303,7 @@ class ReflexionAgent(dspy.Module):
         self._log(
             f"\n{'='*60}\n"
             f"Task: {task[:120]}\n"
+            f"Capability: {capability}\n"
             f"Prior reflections loaded: {len(prior_reflections)}\n"
             f"Available tools: {len(schemas)}\n"
             f"{'='*60}"
@@ -301,10 +323,10 @@ class ReflexionAgent(dspy.Module):
             )
             self._log(f"Plan: {plan[:200]}...")
 
-            # Execute
+            # Execute (pass task_id for mcp-tool-policy.md logging)
             self._log("Executing with MCP tools...")
             answer, tool_calls = self.executor(
-                task=task, plan=plan, reflections=reflections_text
+                task=task, plan=plan, reflections=reflections_text, task_id=task_id
             )
             self._log(f"Tool calls: {len(tool_calls)} | Answer preview: {answer[:150]}...")
 
@@ -327,14 +349,27 @@ class ReflexionAgent(dspy.Module):
             )
 
             if eval_result.passed:
-                # Success — save trace for future optimization
+                # ── promotion-policy.md: outbox → approved flow ───────────────
+                outbox_path = write_to_outbox(task_id, answer, label="result")
+                approved_path = approve_artifact(task_id, label="result")
+                self._log(
+                    f"[promotion-policy.md] outbox: {outbox_path.name} "
+                    f"→ approved: {approved_path.name if approved_path else 'pending'}"
+                )
+
+                # Save trace for future DSPy optimization
                 save_trace(
                     task=task,
                     inputs={"task": task, "context": context, "reflections": reflections_text},
                     outputs={"answer": answer, "plan": plan},
                     tool_calls=tool_calls,
                     score=eval_result.score,
-                    metadata={"attempts": attempt_num, "duration_s": duration},
+                    metadata={
+                        "attempts": attempt_num,
+                        "duration_s": duration,
+                        "capability": capability,
+                        "task_id": task_id,
+                    },
                 )
                 attempts.append(rec)
                 self._log(f"\n✓ Success on attempt {attempt_num}!")

@@ -97,17 +97,36 @@ class MCPToolRegistry:
             tools = [t for t in tools if _is_enabled(t["name"])]
         return tools
 
-    def call(self, name: str, **kwargs: Any) -> str:
+    def call(self, name: str, task_id: str = "unknown", **kwargs: Any) -> str:
+        from .rules import tool_policy as get_policy
+        policy = get_policy()
+
         if not self._initialized:
             self.connect()
         if name not in self._tools:
-            return f"[tool_error] Unknown tool: {name}"
-        if _needs_approval(name):
-            return f"[approval_required] Tool '{name}' requires human approval. Skipping."
+            result = f"[tool_error] Unknown tool: {name}"
+            policy.log_call(task_id, name, kwargs, result, allowed=False)
+            return result
+
+        # policies/mcp-tool-policy.md: check allowlist
+        if not policy.is_allowed(name):
+            if _needs_approval(name):
+                result = f"[approval_required] Tool '{name}' requires human approval."
+            else:
+                result = f"[policy_blocked] Tool '{name}' is not in the MCP allowlist."
+            policy.log_call(task_id, name, kwargs, result, allowed=False)
+            return result
+
         try:
-            return self._session.call_tool(name, kwargs)
+            raw = self._session.call_tool(name, kwargs)
+            # policies/mcp-tool-policy.md: scrub secrets from responses
+            result = policy.scrub_secrets(raw)
+            policy.log_call(task_id, name, kwargs, result[:200], allowed=True)
+            return result
         except Exception as e:
-            return f"[tool_error] {name} failed: {e}"
+            result = f"[tool_error] {name} failed: {e}"
+            policy.log_call(task_id, name, kwargs, result, allowed=True)
+            return result
 
     def as_dspy_tools(self) -> list:
         """Return list of dspy.Tool wrappers (requires dspy installed)."""
