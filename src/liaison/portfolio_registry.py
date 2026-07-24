@@ -28,6 +28,8 @@ from typing import Any, Iterable, Mapping
 
 import yaml
 
+from liaison.policies import load_policies
+
 
 DEFAULT_ACTIVE_REGISTRY = Path("config/project_registry.active.yaml")
 DEFAULT_MERGE_SOURCES_REGISTRY = Path("config/project_registry.merge_sources.yaml")
