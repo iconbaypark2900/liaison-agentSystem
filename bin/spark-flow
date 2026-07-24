@@ -5508,6 +5508,197 @@ def check_state_cmd(args: argparse.Namespace) -> None:
     print("All state checks passed.")
 
 
+# ── Reflexion / DSPy agent commands ──────────────────────────────────────────
+# Exposed as: liaison agent-code, liaison agent-run, etc.
+
+def _agent_sys_path() -> None:
+    """Ensure reflexion_dspy is importable."""
+    import sys
+    _root = Path(__file__).resolve().parent.parent
+    if str(_root) not in sys.path:
+        sys.path.insert(0, str(_root))
+
+
+def agent_code_cmd(args: argparse.Namespace) -> None:
+    _agent_sys_path()
+    from reflexion_dspy.config import configure_dspy
+    from reflexion_dspy.coder import CodingAgent, write_coding_artifact
+    import hashlib, re as _re
+    from reflexion_dspy.spark_agent import list_projects
+
+    _PROJECT_SHORTCUTS = {
+        "adaptive-graph-rag":    str(Path.home() / "creatorsByChoice/adaptive-graph-rag"),
+        "clinical-suite":        str(Path.home() / "creatorsByChoice/clinical-suite"),
+        "quantumRX":             str(Path.home() / "creatorsByChoice/quantumRX"),
+        "sigma":                 str(Path.home() / "quantumGlobalGroup/sigma"),
+        "hybrid-qml":            str(Path.home() / "quantumGlobalGroup/hybrid-qml-kg-poc"),
+        "polymarket-btc":        str(Path.home() / "polymarket_btc"),
+        "polymarket-calc":       str(Path.home() / "polymarket_calculator"),
+    }
+
+    repo_path_str = args.repo or _PROJECT_SHORTCUTS.get(args.project)
+    if not repo_path_str:
+        projects = list_projects()
+        match = next((p for p in projects if p["key"] == args.project and p["exists"]), None)
+        if match:
+            repo_path_str = match["path"]
+        else:
+            die(f"Unknown project '{args.project}'. Known: {list(_PROJECT_SHORTCUTS.keys())}")
+
+    repo_path = Path(repo_path_str).expanduser().resolve()
+    if not (repo_path / ".git").exists():
+        die(f"Not a git repo: {repo_path}")
+
+    slug = _re.sub(r'\W+', '-', args.task.lower())[:30].strip('-')
+    task_id = f"code-{slug}-{hashlib.md5(args.task.encode()).hexdigest()[:6]}"
+
+    # Extract hashtags from task text to allow NIM model routing (#deepseek, #planning, etc.)
+    task_tags = _re.findall(r'#\w+', args.task)
+    model = configure_dspy(use_for="implementation", temperature=0.3, task_tags=task_tags)
+    print(f"[agent-code] model={model} | task={task_id} | repo={repo_path}")
+
+    agent = CodingAgent(
+        max_attempts=getattr(args, 'max_attempts', 4),
+        max_fix_rounds=getattr(args, 'fix_rounds', 3),
+        verbose=True,
+    )
+    result = agent.run(task=args.task, repo_path=repo_path, task_id=task_id)
+    outbox_dir = repo_path / ".spark-flow" / "tasks" / task_id / "outbox"
+    artifact = write_coding_artifact(result, task_id, outbox_dir)
+
+    print(f"\n{'='*60}")
+    if result.success:
+        print(f"[agent-code] SUCCESS — {len(result.files_written)} file(s) written, tests passing")
+        print(f"  Branch: {result.branch}")
+        print(f"  Artifact: {artifact}")
+        print(f"  Merge: cd {repo_path} && git merge {result.branch}")
+    else:
+        print(f"[agent-code] FAILED after {result.attempts} attempt(s). Retry to use reflections.")
+        print(f"  Artifact: {artifact}")
+    print("=" * 60)
+
+
+def agent_run_cmd(args: argparse.Namespace) -> None:
+    _agent_sys_path()
+    from reflexion_dspy.config import configure_dspy
+    from reflexion_dspy.tools import MCPToolRegistry
+    from reflexion_dspy.agent import ReflexionAgent
+    from reflexion_dspy.rules import capability_router as cr
+
+    capability, _ = cr().route_task(args.task)
+    model = configure_dspy(use_for=capability, temperature=0.3)
+    print(f"[agent-run] model={model} | capability={capability}\n")
+
+    registry = MCPToolRegistry()
+    agent = ReflexionAgent(
+        tool_registry=registry,
+        max_attempts=getattr(args, 'max_attempts', 4),
+        verbose=True,
+    )
+    result = agent(task=args.task, context=getattr(args, 'context', '') or "")
+    agent.close()
+
+    print(f"\n{'='*60}")
+    print(f"[agent-run] {'SUCCESS' if result.success else 'PARTIAL'} | score={result.final_score:.2f}")
+    print("=" * 60)
+    print(result.final_answer)
+
+
+def agent_attach_cmd(args: argparse.Namespace) -> None:
+    _agent_sys_path()
+    from reflexion_dspy.config import configure_dspy
+    from reflexion_dspy.spark_agent import attach as spark_attach, detect_domain
+
+    repo_path = Path(args.repo) if getattr(args, 'repo', None) else Path.cwd()
+    domain = getattr(args, 'domain', None) or detect_domain(repo_path)
+    phase_use_for = {
+        "plan": "review", "build": "implementation",
+        "patch": "implementation", "review": "review", "close": "summaries",
+    }.get(args.phase, "implementation")
+
+    model = configure_dspy(use_for=phase_use_for, temperature=0.3)
+    print(f"[agent-attach] model={model} | phase={args.phase} | domain={domain}")
+
+    result = spark_attach(
+        task_id=args.task_id, phase=args.phase, repo_path=repo_path,
+        domain=domain, max_attempts=getattr(args, 'max_attempts', 3), verbose=True,
+    )
+    if result["ok"]:
+        print(f"\nArtifact: {result['outbox']}")
+        print(f"Preview:\n{result['content_preview']}")
+    else:
+        die(result["error"])
+
+
+def agent_reflect_cmd(args: argparse.Namespace) -> None:
+    _agent_sys_path()
+    from reflexion_dspy.spark_agent import reflect as spark_reflect
+    repo_path = Path(args.repo) if getattr(args, 'repo', None) else Path.cwd()
+    spark_reflect(task_id=args.task_id, phase=args.phase, reason=args.reason, repo_path=repo_path)
+    print(f"[agent-reflect] stored | retry: liaison agent-attach {args.task_id} {args.phase}")
+
+
+def agent_approve_cmd(args: argparse.Namespace) -> None:
+    _agent_sys_path()
+    from reflexion_dspy.spark_agent import approve as spark_approve
+    repo_path = Path(args.repo) if getattr(args, 'repo', None) else Path.cwd()
+    spark_approve(task_id=args.task_id, phase=args.phase, repo_path=repo_path)
+    print(f"[agent-approve] trace promoted | liaison agent-history to see stats")
+
+
+def agent_history_cmd(args: argparse.Namespace) -> None:
+    _agent_sys_path()
+    from reflexion_dspy.optimizer import trace_summary
+    from reflexion_dspy.memory import REFLECTION_DIR, TRACE_DIR
+    from pathlib import Path as _Path
+
+    stats = trace_summary()
+    print(f"[agent-history]")
+    print(f"  Traces total:      {stats['total']}")
+    print(f"  Approved:          {stats['passing']}")
+    print(f"  Avg score:         {stats['avg_score']:.2f}")
+    print(f"  Unique tasks:      {stats['task_count']}")
+    print(f"  Compile-ready:     {'YES — run: liaison agent-optimize' if stats['compilation_ready'] else 'No (need 5+ approved)'}")
+
+    budget_log = _Path(__file__).parent.parent / "memory" / "budget_log.jsonl"
+    if budget_log.exists():
+        print(f"  Budget log rows:   {len(budget_log.read_text().splitlines())}")
+
+    tool_log = _Path(__file__).parent.parent / "memory" / "tool_call_log.jsonl"
+    if tool_log.exists():
+        lines = tool_log.read_text().splitlines()
+        blocked = sum(1 for l in lines if '"allowed": false' in l)
+        print(f"  Tool calls:        {len(lines)} ({blocked} blocked)")
+
+
+def agent_chat_cmd(args: argparse.Namespace) -> None:
+    """Drop into an interactive multi-turn liaison REPL (like Claude Code)."""
+    _agent_sys_path()
+    from reflexion_dspy.repl import ChatSession
+    session = ChatSession(verbose=not getattr(args, "quiet", False))
+    session.run()
+
+
+def agent_optimize_cmd(args: argparse.Namespace) -> None:
+    _agent_sys_path()
+    from reflexion_dspy.config import configure_dspy
+    from reflexion_dspy.tools import MCPToolRegistry
+    from reflexion_dspy.agent import ReflexionAgent
+    from reflexion_dspy.optimizer import compile_agent, trace_summary
+
+    stats = trace_summary()
+    if not stats["compilation_ready"]:
+        die(f"Need 5+ approved traces. Have {stats['passing']}. Run tasks and approve artifacts first.")
+
+    configure_dspy(use_for="implementation", temperature=0.3)
+    registry = MCPToolRegistry()
+    agent = ReflexionAgent(tool_registry=registry, verbose=False)
+    save_dir = str(Path(__file__).parent.parent / "memory" / "compiled")
+    compile_agent(agent, strategy="bootstrap", save_path=f"{save_dir}/compiled_agent.pkl")
+    registry.disconnect()
+    print("[agent-optimize] Compilation complete.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog=CLI_NAME,
@@ -6022,6 +6213,59 @@ def main() -> None:
     p = sub.add_parser("registry")
     p.add_argument("registry_name", choices=["repos", "agents", "skills", "workflows", "artifact-contracts", "phase-routing", "hub-skills", "rolodex", "evaluations"])
     p.set_defaults(func=registry_cmd)
+
+    # ── Reflexion / DSPy agent commands ──────────────────────────────────────
+    p = sub.add_parser("agent-code", help="Write code, run tests, Reflexion iterate (like Claude Code)")
+    p.add_argument("project", help="Project key (e.g. sigma, adaptive-graph-rag) or use --repo")
+    p.add_argument("task", help="What to implement, in plain English")
+    p.add_argument("--repo", default=None, help="Override project path")
+    p.add_argument("--max-attempts", dest="max_attempts", type=int, default=4)
+    p.add_argument("--fix-rounds", dest="fix_rounds", type=int, default=3)
+    p.set_defaults(func=agent_code_cmd)
+
+    p = sub.add_parser("agent-run", help="One-shot task using MCP tools + Reflexion (no lifecycle)")
+    p.add_argument("task", help="Task description")
+    p.add_argument("--context", default="", help="Additional context")
+    p.add_argument("--max-attempts", dest="max_attempts", type=int, default=4)
+    p.set_defaults(func=agent_run_cmd)
+
+    p = sub.add_parser("agent-attach", help="Run agent on a spark-flow task phase, write outbox artifact")
+    p.add_argument("task_id")
+    p.add_argument("phase", choices=["plan", "build", "patch", "review", "close"])
+    p.add_argument("--repo", default=None)
+    p.add_argument("--domain", default=None, choices=["python", "quantum", "sigma", "rag", "none"])
+    p.add_argument("--max-attempts", dest="max_attempts", type=int, default=3)
+    p.set_defaults(func=agent_attach_cmd)
+
+    p = sub.add_parser("agent-reflect", help="Record rejection reason for Reflexion memory (next run retries smarter)")
+    p.add_argument("task_id")
+    p.add_argument("phase", choices=["plan", "build", "patch", "review", "close"])
+    p.add_argument("--reason", required=True, help="Why the artifact was rejected")
+    p.add_argument("--repo", default=None)
+    p.set_defaults(func=agent_reflect_cmd)
+
+    p = sub.add_parser("agent-approve", help="Approve artifact — promotes DSPy trace for compilation")
+    p.add_argument("task_id")
+    p.add_argument("phase", choices=["plan", "build", "patch", "review", "close"])
+    p.add_argument("--repo", default=None)
+    p.set_defaults(func=agent_approve_cmd)
+
+    p = sub.add_parser("agent-history", help="Show trace/reflection/budget statistics")
+    p.set_defaults(func=agent_history_cmd)
+
+    p = sub.add_parser("agent-optimize", help="Compile DSPy from approved traces (need 5+ approvals)")
+    p.set_defaults(func=agent_optimize_cmd)
+
+    p = sub.add_parser(
+        "chat",
+        help="Interactive multi-turn liaison REPL — like Claude Code (auto-detects $PWD project)",
+    )
+    p.add_argument("--quiet", action="store_true", help="Suppress verbose agent logs")
+    p.set_defaults(func=agent_chat_cmd)
+
+    # ── bare `liaison` with no args → drop into chat ──────────────────────────
+    if len(sys.argv) == 1:
+        sys.argv.append("chat")
 
     args = parser.parse_args()
     args.func(args)

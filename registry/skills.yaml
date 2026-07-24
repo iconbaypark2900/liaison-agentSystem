@@ -18,4 +18,10 @@ skills:
   synthetic-data-designer:
     owner: agent-system
     use_for: schema-first synthetic dataset design, seed expansion, validation planning, and data-flywheel dataset generation reports
+  reflexion-coder:
+    owner: reflexion_dspy
+    use_for: autonomous code writing, test execution, and self-improving iteration via Reflexion + DSPy using MCP tools
+  spark-flow-review:
+    owner: agent-system
+    use_for: review a completed spark-flow task before the human approves it
 

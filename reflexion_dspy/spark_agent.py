@@ -598,6 +598,23 @@ def approve(task_id: str, phase: str, repo_path: Path | None = None) -> None:
     )
     print(f"[dspy] Approval recorded — trace score updated for optimizer.")
 
+    # Advance spark-flow card to review in STATE.txt
+    state_txt = task_root / "STATE.txt"
+    if state_txt.exists():
+        from datetime import datetime as _dt
+        new_lines: list[str] = []
+        for line in state_txt.read_text().splitlines():
+            if line.startswith("CURRENT_PHASE="):
+                new_lines.append("CURRENT_PHASE=review")
+            elif line.startswith("UPDATED_AT="):
+                new_lines.append(f"UPDATED_AT={_dt.now().isoformat(timespec='seconds')}")
+            elif line.startswith(f"APPROVED_{phase.upper()}="):
+                new_lines.append(f"APPROVED_{phase.upper()}=1")
+            else:
+                new_lines.append(line)
+        state_txt.write_text("\n".join(new_lines) + "\n")
+        print(f"[kanban] Task {task_id} → review (approved {phase})")
+
 
 # ── Project repo discovery ────────────────────────────────────────────────────
 

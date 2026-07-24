@@ -47,6 +47,17 @@ from reflexion_dspy.spark_agent import (
 
 PHASES = ["plan", "build", "patch", "review", "close"]
 
+# Project registry — shorthand keys → full paths
+PROJECT_SHORTCUTS: dict[str, str] = {
+    "adaptive-graph-rag":    str(Path.home() / "creatorsByChoice/adaptive-graph-rag"),
+    "clinical-suite":        str(Path.home() / "creatorsByChoice/clinical-suite"),
+    "quantumRX":             str(Path.home() / "creatorsByChoice/quantumRX"),
+    "sigma":                 str(Path.home() / "quantumGlobalGroup/sigma"),
+    "hybrid-qml":            str(Path.home() / "quantumGlobalGroup/hybrid-qml-kg-poc"),
+    "polymarket-btc":        str(Path.home() / "polymarket_btc"),
+    "polymarket-calc":       str(Path.home() / "polymarket_calculator"),
+}
+
 
 def _load_hf_token() -> None:
     env_file = Path(__file__).parent.parent.parent / "chat-ui" / ".env.local"
@@ -276,6 +287,74 @@ def cmd_tools(args: argparse.Namespace) -> None:
 
 # ── run (standalone) ───────────────────────────────────────────────────────────
 
+def cmd_code(args: argparse.Namespace) -> None:
+    """
+    Real coding agent: reads a project, writes code, runs tests, iterates.
+    Like Claude Code / Codex — but uses MCP tools + Reflexion + DSPy.
+    All changes go to a git feature branch; tests must pass before commit.
+    """
+    from reflexion_dspy.coder import CodingAgent, write_coding_artifact
+
+    # Resolve project path
+    repo_path_str = args.repo or PROJECT_SHORTCUTS.get(args.project)
+    if not repo_path_str:
+        # Try to find in list_projects()
+        projects = list_projects()
+        match = next((p for p in projects if p["key"] == args.project and p["exists"]), None)
+        if match:
+            repo_path_str = match["path"]
+        else:
+            print(
+                f"Unknown project '{args.project}'. "
+                f"Known shortcuts: {list(PROJECT_SHORTCUTS.keys())}\n"
+                f"Or use: reflexion-agent code --repo /full/path 'task description'"
+            )
+            sys.exit(1)
+
+    repo_path = Path(repo_path_str).expanduser().resolve()
+    if not (repo_path / ".git").exists():
+        print(f"ERROR: {repo_path} is not a git repo (no .git dir)")
+        sys.exit(1)
+
+    # Generate task_id from task text (slug)
+    import hashlib, re
+    slug = re.sub(r'\W+', '-', args.task.lower())[:30].strip('-')
+    task_id = f"code-{slug}-{hashlib.md5(args.task.encode()).hexdigest()[:6]}"
+
+    # Select model
+    model = _configure(use_for="implementation")
+    print(f"[model_routes.yaml] {model}")
+    print(f"[task_id] {task_id}")
+    print(f"[repo] {repo_path}")
+
+    agent = CodingAgent(
+        max_attempts=args.max_attempts,
+        max_fix_rounds=args.fix_rounds,
+        verbose=not args.quiet,
+    )
+
+    result = agent.run(task=args.task, repo_path=repo_path, task_id=task_id)
+
+    # Write outbox artifact
+    outbox_dir = repo_path / ".spark-flow" / "tasks" / task_id / "outbox"
+    artifact = write_coding_artifact(result, task_id, outbox_dir)
+
+    print("\n" + "=" * 60)
+    if result.success:
+        print(f"✓ SUCCESS — {len(result.files_written)} file(s) written, tests passing")
+        print(f"  Branch: {result.branch}")
+        print(f"  Artifact: {artifact}")
+        print(f"\n  Review and merge:")
+        print(f"  cd {repo_path} && git diff main..{result.branch}")
+        print(f"  git checkout main && git merge {result.branch}")
+    else:
+        print(f"✗ FAILED after {result.attempts} attempt(s)")
+        print(f"  Reflections saved — re-run to retry with learned context:")
+        print(f"  reflexion-agent code {args.project!r} {args.task!r}")
+        print(f"  Artifact: {artifact}")
+    print("=" * 60)
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     from reflexion_dspy.agent import ReflexionAgent
     from reflexion_dspy.rules import capability_router as cr
@@ -373,6 +452,21 @@ def main() -> None:
     p.add_argument("--all", action="store_true")
     p.add_argument("--server", default=None, help="Filter by server prefix (e.g. arxiv)")
     p.set_defaults(func=cmd_tools)
+
+    # code — real coding agent
+    p = sub.add_parser(
+        "code",
+        help="Write code, run tests, iterate — like Claude Code but with Reflexion",
+    )
+    p.add_argument("project", help="Project key (e.g. adaptive-graph-rag) or use --repo")
+    p.add_argument("task", help="What to implement, e.g. 'Add Kelly criterion position sizing'")
+    p.add_argument("--repo", default=None, help="Override project path")
+    p.add_argument("--max-attempts", type=int, default=4,
+                   help="Max Reflexion retry attempts (default 4)")
+    p.add_argument("--fix-rounds", type=int, default=3,
+                   help="Max test-fix rounds per attempt (default 3)")
+    p.add_argument("--quiet", action="store_true")
+    p.set_defaults(func=cmd_code)
 
     # run (standalone)
     p = sub.add_parser("run", help="One-shot task without spark-flow lifecycle")

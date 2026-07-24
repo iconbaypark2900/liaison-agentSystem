@@ -902,7 +902,9 @@ def _open_task_dirs_for_project(project: str | None) -> list[Path]:
         state = td / "STATE.txt"
         if state.exists():
             text = state.read_text(errors="replace")
-            if "CLOSED: true" in text or "CURRENT_PHASE: complete" in text:
+            # STATE.txt uses key=value format; accept both = and : for compat
+            if ("CLOSED: true" in text or "CURRENT_PHASE: complete" in text
+                    or "CURRENT_PHASE=complete" in text or "CURRENT_PHASE=closed" in text):
                 continue
         open_dirs.append(td)
     return open_dirs
