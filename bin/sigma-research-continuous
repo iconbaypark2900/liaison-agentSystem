@@ -1,0 +1,381 @@
+#!/usr/bin/env python3
+"""
+sigma-research-continuous — Weekly edge discovery loop for all sigma accounts.
+
+For each sigma account, runs the Reflexion research agent and compares the
+result to the current champion. If the challenger beats the champion by >10%
+on Sharpe, a proposal is written to memory/proposals/ for human review.
+
+Designed to be run as a weekly cron job or systemd timer:
+
+    # /etc/cron.d/sigma-research  (or crontab -e)
+    0 6 * * 1  iconbaypark2900  /home/iconbaypark2900/liaison-agentSystem/bin/sigma-research-continuous
+
+Usage:
+    sigma-research-continuous                    # run all accounts
+    sigma-research-continuous --accounts options_income oanda_forex
+    sigma-research-continuous --seed-champions   # seed champions from last known configs
+    sigma-research-continuous --show-proposals   # print pending proposals and exit
+    sigma-research-continuous --apply-proposal options_income  # mark applied
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+_root = Path(__file__).resolve().parent.parent
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
+
+# Auto-load env from .env.local
+_env = _root.parent / "chat-ui" / ".env.local"
+if _env.exists():
+    for _line in _env.read_text().splitlines():
+        if "=" in _line and not _line.startswith("#"):
+            k, _, v = _line.partition("=")
+            if k.strip() and v.strip() and k.strip() not in os.environ:
+                os.environ[k.strip()] = v.strip()
+
+from reflexion_dspy.champion_tracker import (
+    is_improvement,
+    list_pending_proposals,
+    load_champion,
+    mark_proposal_applied,
+    save_champion,
+    write_proposal,
+)
+from reflexion_dspy.research_agent import StrategyResearchAgent
+
+
+# ─── Account definitions ─────────────────────────────────────────────────────
+# Each entry defines the research question and agent parameters for one account.
+# The "improve framing" in the question is intentional — it tells the LLM there
+# is an existing baseline and to look for something better, not just anything.
+
+ACCOUNT_CONFIGS: dict[str, dict] = {
+    "options_income": {
+        "backtest_type": "options_income",
+        "asset_class": "equity",
+        "underlying": "SPY",
+        "universe": "SPY",
+        "question": (
+            "SPY weekly put credit spread income: find an entry/exit configuration "
+            "that improves on the current champion (weekly entry, VIX≥13, 4× stop). "
+            "Explore: different VIX floors, credit filters, exit timing, underlying "
+            "swap to QQQ, or regime-based entry. Target: OOS net > 163bps, Sharpe > 0.118."
+        ),
+        "max_attempts": 8,
+    },
+    "core_allocation": {
+        "backtest_type": "equity",
+        "asset_class": "equity",
+        "universe": (
+            "SPY,EFA,EEM,TLT,IEF,GLD,DBC,VNQ,UUP,FXE,IBIT,"
+            "MU,COHR,LITE,CRDO,SMCI,WOLF,"
+            "CEG,BWXT,OKLO,SMR,UUUU,"
+            "IONQ,QBTS,RGTI,QUBT,"
+            "RKLB,ASTS,LUNR,JOBY,ACHR,"
+            "PLTR,KTOS,CRSP,BEAM,NTLA,QS"
+        ),
+        "question": (
+            "Core portfolio allocation with trend filter: which strategy and symbols "
+            "maximise OOS Sharpe while holding ETF backbone intact? "
+            "Try momentum on emerging-tech tickers vs mean-reversion on broad ETFs. "
+            "Target: improve on current champion Sharpe."
+        ),
+        "max_attempts": 6,
+    },
+    "oanda_forex": {
+        "backtest_type": "equity",
+        "asset_class": "forex",
+        "universe": "EUR_USD,GBP_USD,USD_JPY",
+        "question": (
+            "OANDA forex: EUR/GBP/JPY mean-reversion is the confirmed champion. "
+            "Can any alternative (OU process, breakout, regime, Fourier) beat it? "
+            "Also try cross-rates (EUR_GBP, EUR_JPY, GBP_JPY). "
+            "Target: OOS Sharpe > 0.047."
+        ),
+        "max_attempts": 6,
+    },
+    "blackbull_mt5": {
+        "backtest_type": "equity",
+        "asset_class": "forex",
+        "universe": "XAUUSD,EURUSD,USDJPY,USDCHF",
+        "question": (
+            "BlackBull MT5: champion is XAUUSD regime (Sharpe 0.053) + EUR/JPY/CHF "
+            "mean-reversion (Sharpe 0.076). Can we find a unified strategy that works "
+            "across all four, or a better configuration of the two-strategy split? "
+            "Explore: XAUUSD breakout, XAUUSD momentum, OU on CHF pairs. "
+            "Target: improve on champion Sharpe."
+        ),
+        "max_attempts": 6,
+    },
+}
+
+# Seeded champions from prior research sessions — used by --seed-champions.
+# These represent the last validated configurations found in the previous sessions.
+SEED_CHAMPIONS: dict[str, dict] = {
+    "options_income": {
+        "config": {
+            "entry_freq": "weekly",
+            "exit_mode": "expiry",
+            "sleeve_frac": 0.02,
+            "vix_min": 13,
+            "stop_mult": 4.0,
+        },
+        "strategy": "weekly_vix13_stop4",
+        "symbols": ["SPY"],
+        "oos_stats": {
+            "n_trades": 176,
+            "net_bps": 163.3,
+            "sharpe": 0.118,
+            "win_rate": 0.864,
+        },
+        "research_question": "SPY weekly put credit spread — OOS 2023-2026",
+        "backtest_type": "options_income",
+        "notes": "Verified 2026-07 session. n=176, net=163.3bps, Sharpe=0.118, win_rate=86.4%.",
+    },
+    "oanda_forex": {
+        "config": {"strategy": "mean_reversion"},
+        "strategy": "mean_reversion",
+        "symbols": ["EUR_USD", "GBP_USD", "USD_JPY"],
+        "oos_stats": {
+            "n_trades": 312,
+            "net_bps": 8.2,
+            "sharpe": 0.047,
+            "win_rate": 0.521,
+        },
+        "research_question": "OANDA forex mean-reversion edge on EUR/GBP/JPY",
+        "backtest_type": "equity",
+        "notes": "Research sweep 2026-07. Best FX pool after removing AUD/CAD.",
+    },
+    "blackbull_mt5": {
+        "config": {"strategy": "mean_reversion+regime"},
+        "strategy": "mean_reversion+regime",
+        "symbols": ["XAUUSD", "EURUSD", "USDJPY", "USDCHF"],
+        "oos_stats": {
+            "n_trades": 287,
+            "net_bps": 9.1,
+            "sharpe": 0.076,
+            "win_rate": 0.532,
+        },
+        "research_question": "BlackBull MT5 gold+forex strategy sweep",
+        "backtest_type": "equity",
+        "notes": (
+            "XAUUSD regime Sharpe=0.053 + EUR/JPY/CHF mean_reversion Sharpe=0.076. "
+            "Combined OOS Sharpe 0.076 (best single-strategy across full pool). "
+            "Weights: XAUUSD:0.35, EURUSD:0.25, USDJPY:0.20, USDCHF:0.20."
+        ),
+    },
+}
+
+
+# ─── Runner ──────────────────────────────────────────────────────────────────
+
+def _run_account(account: str, cfg: dict, verbose: bool = True) -> dict:
+    """Run one research cycle for a single account. Returns a result summary dict."""
+
+    def log(msg: str) -> None:
+        if verbose:
+            print(msg, flush=True)
+
+    log(f"\n{'─'*60}")
+    log(f"[{account}] Starting research run")
+    log(f"  Question: {cfg['question'][:80]}...")
+
+    champion = load_champion(account)
+    if champion:
+        ch_sh = champion["oos_stats"].get("sharpe", 0)
+        log(f"  Champion: {champion['strategy']} | Sharpe={ch_sh:.4f}")
+    else:
+        log("  Champion: (none — first passing result wins)")
+
+    agent = StrategyResearchAgent(
+        research_question=cfg["question"],
+        asset_class=cfg["asset_class"],
+        universe=cfg["universe"],
+        max_attempts=cfg["max_attempts"],
+        backtest_type=cfg["backtest_type"],
+        options_underlying=cfg.get("underlying", "SPY"),
+    )
+
+    try:
+        outcome = agent.run()
+    except Exception as exc:
+        log(f"  [ERROR] Research agent raised: {exc}")
+        return {"account": account, "status": "error", "error": str(exc)}
+
+    if not outcome.edge_found:
+        log(f"  Result: NO EDGE FOUND after {outcome.attempts} attempts.")
+        return {
+            "account": account,
+            "status": "no_edge",
+            "attempts": outcome.attempts,
+            "summary": outcome.summary,
+        }
+
+    log(f"  Result: EDGE FOUND — {outcome.winning_strategy}")
+    log(f"  OOS: {json.dumps(outcome.oos_stats, indent=6)}")
+
+    # Flatten oos_stats — options harness wraps in {"options": {...}}
+    raw_stats = outcome.oos_stats
+    if "options" in raw_stats and isinstance(raw_stats["options"], dict):
+        flat_stats = raw_stats["options"]
+    else:
+        # equity harness may nest by strategy name
+        first_val = next(iter(raw_stats.values()), {}) if isinstance(raw_stats, dict) else {}
+        flat_stats = first_val if isinstance(first_val, dict) and "sharpe" in first_val else raw_stats
+
+    improved, reason = is_improvement(account, flat_stats)
+    log(f"  vs Champion: {reason}")
+
+    if improved:
+        ch_stats = champion["oos_stats"] if champion else None
+        prop_path = write_proposal(
+            account,
+            config=outcome.oos_stats,
+            strategy=outcome.winning_strategy,
+            symbols=outcome.winning_symbols,
+            oos_stats=flat_stats,
+            research_question=cfg["question"],
+            backtest_type=cfg["backtest_type"],
+            improvement_reason=reason,
+            champion_stats=ch_stats,
+        )
+        save_champion(
+            account,
+            config=outcome.oos_stats,
+            strategy=outcome.winning_strategy,
+            symbols=outcome.winning_symbols,
+            oos_stats=flat_stats,
+            research_question=cfg["question"],
+            backtest_type=cfg["backtest_type"],
+        )
+        log(f"  *** CHAMPION UPDATED *** — proposal written to {prop_path}")
+        return {
+            "account": account,
+            "status": "improved",
+            "strategy": outcome.winning_strategy,
+            "oos_stats": flat_stats,
+            "reason": reason,
+            "proposal_path": str(prop_path),
+        }
+    else:
+        log(f"  Champion holds — no update needed.")
+        return {
+            "account": account,
+            "status": "champion_holds",
+            "strategy": outcome.winning_strategy,
+            "oos_stats": flat_stats,
+            "reason": reason,
+        }
+
+
+def _show_proposals() -> None:
+    proposals = list_pending_proposals()
+    if not proposals:
+        print("No pending proposals.")
+        return
+    for p in proposals:
+        print(f"\n{'═'*60}")
+        print(f"Account:  {p['account']}")
+        print(f"Proposed: {p['proposed_at']}")
+        print(f"Strategy: {p['proposed_strategy']}")
+        print(f"Symbols:  {p['proposed_symbols']}")
+        ch = p.get("champion_oos") or {}
+        ch_sh = ch.get("sharpe", "?") if ch else "?"
+        new_sh = p["challenger_oos"].get("sharpe", "?")
+        print(f"Sharpe:   champion={ch_sh} → challenger={new_sh}")
+        print(f"Reason:   {p['improvement_reason']}")
+        print(f"Action:   {p['action_required']}")
+
+
+def _seed_champions() -> None:
+    for account, seed in SEED_CHAMPIONS.items():
+        existing = load_champion(account)
+        if existing:
+            print(f"[{account}] Champion already set — skipping seed.")
+            continue
+        save_champion(
+            account,
+            config=seed["config"],
+            strategy=seed["strategy"],
+            symbols=seed["symbols"],
+            oos_stats=seed["oos_stats"],
+            research_question=seed["research_question"],
+            backtest_type=seed["backtest_type"],
+            notes=seed.get("notes", ""),
+        )
+        print(f"[{account}] Seeded champion: {seed['strategy']} | Sharpe={seed['oos_stats'].get('sharpe')}")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument(
+        "--accounts", nargs="+",
+        choices=list(ACCOUNT_CONFIGS.keys()),
+        default=list(ACCOUNT_CONFIGS.keys()),
+        help="Which accounts to run (default: all)",
+    )
+    ap.add_argument("--seed-champions", action="store_true",
+                    help="Seed champion files from prior research and exit")
+    ap.add_argument("--show-proposals", action="store_true",
+                    help="Print pending proposals and exit")
+    ap.add_argument("--apply-proposal", metavar="ACCOUNT",
+                    help="Mark a pending proposal as applied")
+    ap.add_argument("--quiet", action="store_true",
+                    help="Suppress per-account progress output")
+    args = ap.parse_args()
+
+    if args.seed_champions:
+        _seed_champions()
+        return 0
+
+    if args.show_proposals:
+        _show_proposals()
+        return 0
+
+    if args.apply_proposal:
+        mark_proposal_applied(args.apply_proposal)
+        print(f"Marked {args.apply_proposal} proposal as applied.")
+        return 0
+
+    results = []
+    for account in args.accounts:
+        cfg = ACCOUNT_CONFIGS[account]
+        result = _run_account(account, cfg, verbose=not args.quiet)
+        results.append(result)
+
+    print(f"\n{'═'*60}")
+    print("RUN SUMMARY")
+    for r in results:
+        status = r["status"].upper()
+        line = f"  {r['account']:<22} {status}"
+        if r["status"] == "improved":
+            sh = r["oos_stats"].get("sharpe", "?")
+            line += f" — new champion Sharpe={sh}"
+        elif r["status"] == "champion_holds":
+            sh = r["oos_stats"].get("sharpe", "?")
+            line += f" — challenger Sharpe={sh}"
+        elif r["status"] == "error":
+            line += f" — {r.get('error', '')[:60]}"
+        print(line)
+    print("═"*60)
+
+    pending = list_pending_proposals()
+    if pending:
+        print(f"\n{len(pending)} pending proposal(s). Review with: sigma-research-continuous --show-proposals")
+
+    improved = [r for r in results if r["status"] == "improved"]
+    return 0 if not improved or True else 0  # always 0 — scheduler shouldn't retry on "no improvement"
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

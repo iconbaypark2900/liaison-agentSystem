@@ -60,24 +60,39 @@ AVAILABLE_STRATEGIES = (
 
 # ── Options config parameter space ────────────────────────────────────────────
 OPTIONS_PARAM_SPACE = """
-otm_pct (float 0.02-0.10): how far OTM the short put strike is (default 0.05 = 5%OTM)
-width_pct (float 0.002-0.03): spread width as fraction of spot (default 0.02 = 2%)
-vix_min (float): skip entry when VIX < threshold (0 = always enter; try 12, 15, 18)
-vix_pctile_min (float): skip entry when VIX is below this historical percentile (0 = off; try 25, 30, 40)
-min_credit_frac (float): skip entry when credit/width below this (0 = off; try 0.10, 0.15, 0.25)
-stop_mult (float): close when spread marks at stop_mult × entry_credit (default 2.0; use 1e9 for no stop)
-profit_target (float): close when premium decayed by this fraction (default 0.50)
-exit_mode (str): "live" for stop+PT exits, "expiry" to hold all to expiration
-condor (bool): if true, also sell a call credit spread above spot (iron condor)
-sleeve_frac (float): equity at risk per trade (default 0.10 = 10%)
-entry_freq (str): "monthly" (default) or "weekly" (weekly ladder, 5 concurrent rungs)
-skew_bump (float): add extra vol to BS IV — tests sensitivity to flat-VIX underpricing (try 0.04)
+PARAMETERS (combine 1-2 at most — NOT 3+):
+otm_pct (float 0.02-0.10): how far OTM the short put (default 0.05)
+width_pct (float 0.002-0.03): spread width as % of spot (default 0.02)
+vix_min (float): skip entry when VIX < this (try 12, 13, 15; 0 = no filter)
+stop_mult (float): close when spread costs stop_mult × credit (default 2.0; try 3.0, 4.0, or 1e9 for no stop)
+profit_target (float): close at this fraction of credit received (default 0.50; try 0.35, 0.65)
+exit_mode (str): "live" (stop+PT exits, default) or "expiry" (hold all to expiration)
+condor (bool): add a call credit spread above spot (iron condor)
+sleeve_frac (float): fraction of equity at risk per trade (ALWAYS 0.02 with weekly)
 
-IMPORTANT: combinations of 2-3 parameters are usually more interesting than single tweaks.
-The gate requires n_trades >= 100 OOS: monthly entry on SPY from 2023+ gives ~30 trades.
-To reach 100 OOS trades you need weekly entry (entry_freq="weekly") OR a longer OOS window.
-Monthly entry + OOS window 2023-2026 = ~42 months = ~42 trades. Gate WILL fail on n<100.
-Recommend weekly entry or relaxed gate awareness.
+TRADE COUNT ARITHMETIC — READ BEFORE PROPOSING ANY CONFIG:
+- entry_freq="weekly" + NO filters → ~186 OOS trades (2023-2026) → gate CAN pass
+- entry_freq="weekly" + vix_min=15 ONLY → ~131 OOS trades → PASSES (verified)
+- entry_freq="weekly" + vix_min=15 + min_credit_frac=0.15 → ~23 OOS trades → FAILS n<100
+- entry_freq="weekly" + vix_min=12 + min_credit_frac=0.18 → ~10 OOS trades → FAILS n<100
+- entry_freq="weekly" + vix_min=15 + vix_pctile_min=any → even fewer trades → FAILS
+
+OOS REGIME (2023-2026): VIX spent most of 2023-2024 between 12-18. This is historically LOW.
+Any VIX filter removes a large fraction of entries. min_credit_frac stacks on top of that.
+
+RULE: Use AT MOST ONE entry filter (vix_min OR min_credit_frac, never both).
+ALWAYS include: entry_freq="weekly", sleeve_frac=0.02
+NEVER combine: vix_min + min_credit_frac (kills trade count)
+NEVER combine: vix_min + vix_pctile_min (double filter = almost no trades)
+
+GOOD SINGLE-FILTER CONFIGS TO TRY:
+- {"entry_freq": "weekly", "sleeve_frac": 0.02, "vix_min": 15.0} — already VERIFIED to PASS gate
+- {"entry_freq": "weekly", "sleeve_frac": 0.02, "stop_mult": 4.0} — softer stop
+- {"entry_freq": "weekly", "sleeve_frac": 0.02, "exit_mode": "expiry"} — hold to expiry
+- {"entry_freq": "weekly", "sleeve_frac": 0.02, "vix_min": 13.0, "stop_mult": 4.0} — mild VIX + soft stop
+- {"entry_freq": "weekly", "sleeve_frac": 0.02, "condor": true, "exit_mode": "expiry"} — iron condor
+
+DO NOT re-propose any config already tried in past_reflections.
 """
 
 
@@ -190,7 +205,7 @@ class OptionsEdgeHypothesisSignature(dspy.Signature):
         desc="WHY this configuration should improve OOS edge — name the structural reason"
     )
     config_json: str = dspy.OutputField(
-        desc="Valid JSON dict of run_variant() config overrides. MUST include entry_freq: 'weekly' and sleeve_frac: 0.02 unless you have strong reason otherwise"
+        desc="Valid JSON dict only. MUST include entry_freq='weekly' and sleeve_frac=0.02. Use AT MOST ONE entry filter. NEVER combine vix_min with min_credit_frac or vix_pctile_min."
     )
     variant_name: str = dspy.OutputField(
         desc="Short snake_case label for this config (e.g. 'weekly_vix15_nocr')"
