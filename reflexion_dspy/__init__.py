@@ -22,6 +22,9 @@ from .tools import MCPToolRegistry
 from .memory import save_reflection, load_reflections, save_trace, load_all_traces
 from .evaluator import default_evaluator, CompositeEvaluator
 from .optimizer import compile_agent, trace_summary
+from .coder import CodingAgent, CodingResult, write_coding_artifact
+from .skills import SkillRouter, skill_router, route_task_skills, SkillRoutingResult
+from .repl import ChatSession, ProjectContext
 
 __all__ = [
     "ReflexionAgent",
@@ -36,4 +39,13 @@ __all__ = [
     "CompositeEvaluator",
     "compile_agent",
     "trace_summary",
+    "CodingAgent",
+    "CodingResult",
+    "write_coding_artifact",
+    "SkillRouter",
+    "skill_router",
+    "route_task_skills",
+    "SkillRoutingResult",
+    "ChatSession",
+    "ProjectContext",
 ]

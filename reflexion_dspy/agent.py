@@ -47,6 +47,7 @@ from .rules import (
     write_to_outbox,
     approve_artifact,
 )
+from .skills import route_task_skills
 from .tools import MCPToolRegistry, format_tool_list
 
 
@@ -277,6 +278,17 @@ class ReflexionAgent(dspy.Module):
         # ── closed-feedback-policy.md: record objective ───────────────────────
         write_objective(task_id, task, capability)
         self._log(f"[capability_routes.yaml] Routed to: {capability}")
+
+        # ── skills.yaml: inject matching skill guidance into planner context ──
+        skill_result = route_task_skills(task)
+        if skill_result.skills:
+            skill_names = [s.name for s in skill_result.skills]
+            self._log(f"[skills.yaml] Matched skills: {skill_names}")
+        if skill_result.agents:
+            agent_names = [a.name for a in skill_result.agents]
+            self._log(f"[hub_skills.yaml] Suggested agents: {agent_names}")
+        if skill_result.context_block:
+            context = (context + "\n\n" + skill_result.context_block).strip()
 
         # Connect tools if not already connected
         if not self.registry._initialized:

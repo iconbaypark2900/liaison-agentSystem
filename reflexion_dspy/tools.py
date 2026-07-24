@@ -40,17 +40,41 @@ ENABLED_TOOL_SUBSTRINGS = [
     "alpaca-get_", "alpaca-list_",
 ]
 
-# Always block these regardless of server
+# Operations allowed when CodingAgent is active (write-enabled mode)
+CODING_ALLOWED_SUBSTRINGS = [
+    "filesystem-write_file",
+    "filesystem-edit_file",
+    "filesystem-create_directory",
+    "code-executor-execute_code",
+    "code-executor-execute_code_file",
+    "shell-shell_execute",
+    "git-commit",
+    "git-add",
+]
+
+# Always block these regardless of mode
 APPROVAL_REQUIRED_SUBSTRINGS = [
-    "filesystem-write_", "filesystem-edit_", "filesystem-create_", "filesystem-delete_",
-    "filesystem-move_",
-    "git-push", "git-commit",
+    "filesystem-delete_", "filesystem-move_",
+    "git-push",
     "github-create_", "github-update_", "github-delete_", "github-merge_",
     "alpaca-place_order", "alpaca-cancel_order", "alpaca-submit_",
-    "docker-run", "shell-",
-    "redis-set", "redis-del", "redis-hset",
+    "docker-run",
+    "redis-del", "redis-hset",
     "postgres-execute", "sqlite-write",
 ]
+
+# Thread-local-ish flag: set to True by CodingToolSession
+_CODING_MODE_ACTIVE: bool = False
+
+
+def enable_coding_mode() -> None:
+    global _CODING_MODE_ACTIVE
+    _CODING_MODE_ACTIVE = True
+
+
+def disable_coding_mode() -> None:
+    global _CODING_MODE_ACTIVE
+    _CODING_MODE_ACTIVE = False
 
 
 def _is_enabled(tool_name: str) -> bool:
@@ -66,6 +90,14 @@ def _is_enabled(tool_name: str) -> bool:
 def _needs_approval(tool_name: str) -> bool:
     name = tool_name.lower()
     return any(sub in name for sub in APPROVAL_REQUIRED_SUBSTRINGS)
+
+
+def _is_coding_allowed(tool_name: str) -> bool:
+    """Returns True for write/exec tools when coding mode is active."""
+    if not _CODING_MODE_ACTIVE:
+        return False
+    name = tool_name.lower()
+    return any(sub in name for sub in CODING_ALLOWED_SUBSTRINGS)
 
 
 class MCPToolRegistry:
@@ -109,7 +141,8 @@ class MCPToolRegistry:
             return result
 
         # policies/mcp-tool-policy.md: check allowlist
-        if not policy.is_allowed(name):
+        # Coding mode unlocks write/exec tools scoped to feature branches
+        if not policy.is_allowed(name) and not _is_coding_allowed(name):
             if _needs_approval(name):
                 result = f"[approval_required] Tool '{name}' requires human approval."
             else:

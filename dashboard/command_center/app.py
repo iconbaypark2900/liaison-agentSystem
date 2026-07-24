@@ -9,6 +9,10 @@ import shlex
 import subprocess
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from reflexion_dspy.repl import ChatSession
 
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -17,9 +21,11 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import (
     Footer,
     Header,
+    Input,
     Label,
     ListItem,
     ListView,
+    RichLog,
     Static,
     TabbedContent,
     TabPane,
@@ -311,6 +317,11 @@ class CommandCenterApp(App):
     ListView { height: 100%; }
     ListView > ListItem { padding: 0 1; }
     ListView:focus ListItem.--highlight { background: $accent 40%; }
+    #agent-tab { height: 100%; }
+    #agent-log { height: 1fr; border: solid $accent; padding: 0 1; overflow-y: auto; }
+    #agent-status { height: 1; padding: 0 1; background: $boost; color: $text-muted; }
+    #agent-input-row { height: 3; }
+    #agent-input { width: 1fr; }
     """
 
     BINDINGS = [
@@ -333,6 +344,7 @@ class CommandCenterApp(App):
         Binding("9", "digit_9", "Action 9", show=False),
         Binding("h", "filter_hermes_skills", "Hermes skills", show=False),
         Binding("escape", "clear_project", "All projects"),
+        Binding("a", "goto_agent", "Agent", show=True),
     ]
 
     def __init__(self, initial_state: dict, refresh_on_start: bool = False) -> None:
@@ -400,6 +412,19 @@ class CommandCenterApp(App):
                         with Vertical(id="ops-right"):
                             yield MetricsList(id="metrics")
                             yield OpsDetail(id="ops-detail")
+                with TabPane("Agent", id="agent"):
+                    with Vertical(id="agent-tab"):
+                        yield RichLog(id="agent-log", highlight=True, markup=True, wrap=True)
+                        yield Static("", id="agent-status")
+                        with Horizontal(id="agent-input-row"):
+                            yield Input(
+                                id="agent-input",
+                                placeholder=(
+                                    "liaison agent-code sigma 'Add Kelly criterion'  |  "
+                                    "agent-run 'Search arxiv for VQE'  |  "
+                                    "or type a task directly"
+                                ),
+                            )
         yield Footer()
 
     def on_mount(self) -> None:
@@ -1107,6 +1132,146 @@ class CommandCenterApp(App):
                 )
         elif self._selected_ops:
             self._update_ops_from_selection(self._selected_ops)
+
+    # ── Agent tab ─────────────────────────────────────────────────────────────
+
+    def action_goto_agent(self) -> None:
+        tabs = self.query_one(TabbedContent)
+        tabs.active = "agent"
+        self.query_one("#agent-input", Input).focus()
+
+    # ── ChatSession singleton (shared across all Agent tab interactions) ──────
+
+    _chat_session: "ChatSession | None" = None  # type: ignore[name-defined]
+
+    def _get_chat_session(self) -> "ChatSession":  # type: ignore[name-defined]
+        if self._chat_session is None:
+            import sys as _sys
+            _agent_root = str(Path(__file__).parent.parent.parent)
+            if _agent_root not in _sys.path:
+                _sys.path.insert(0, _agent_root)
+            from reflexion_dspy.repl import ChatSession
+            # Verbose=False for TUI — we capture stdout instead
+            self._chat_session = ChatSession(verbose=True)
+        return self._chat_session
+
+    @on(Input.Submitted, "#agent-input")
+    def agent_input_submitted(self, event: Input.Submitted) -> None:
+        text = event.value.strip()
+        if not text:
+            return
+        event.input.clear()
+        self._agent_dispatch(text)
+
+    def _agent_dispatch(self, text: str) -> None:
+        """Route input to ChatSession (slash commands or free text)."""
+        log = self.query_one("#agent-log", RichLog)
+        log.write(f"[bold cyan]you ▶[/bold cyan] {text}")
+        self.query_one("#agent-status", Static).update(f"Running…")
+        self._run_chat_turn(text)
+
+    @work(thread=True)
+    def _run_chat_turn(self, text: str) -> None:
+        """Execute one ChatSession turn, capturing output to the TUI log."""
+        import io, sys as _sys, threading
+
+        # Animated spinner so the user knows the agent is running
+        _stop_spinner = threading.Event()
+        _spinner_frames = "⣾⣽⣻⢿⡿⣟⣯⣷"
+
+        def _spin() -> None:
+            i = 0
+            while not _stop_spinner.is_set():
+                frame = _spinner_frames[i % len(_spinner_frames)]
+                self.call_from_thread(self._agent_set_status, f"{frame} thinking…")
+                i += 1
+                _stop_spinner.wait(0.12)
+
+        _spinner_thread = threading.Thread(target=_spin, daemon=True)
+        _spinner_thread.start()
+
+        # Redirect stdout so verbose agent logs appear in the TUI log
+        old_stdout = _sys.stdout
+        captured = io.StringIO()
+        _sys.stdout = captured
+
+        try:
+            session = self._get_chat_session()
+            session._handle(text)
+        except SystemExit:
+            # /quit typed in TUI — don't actually exit, just note it
+            self.call_from_thread(self._agent_log_line, "[yellow]Use Ctrl+Q or q to quit the TUI.[/yellow]")
+        except Exception as exc:
+            self.call_from_thread(self._agent_log_line, f"[red]Error: {exc}[/red]")
+        finally:
+            _stop_spinner.set()
+            _sys.stdout = old_stdout
+
+        output = captured.getvalue()
+        for line in output.splitlines():
+            stripped = line.strip()
+            if stripped:
+                self.call_from_thread(self._agent_log_line, stripped)
+
+        # Refresh kanban after any agent run that may have advanced tasks
+        self.call_from_thread(self._refresh_kanban_from_thread)
+        self.call_from_thread(self._agent_set_status, "Ready")
+
+    def _refresh_kanban_from_thread(self) -> None:
+        """Re-populate kanban columns from disk state (called after agent run)."""
+        try:
+            from dashboard.command_center.data import collect_command_center_state
+            fresh = collect_command_center_state(refresh=True)
+            kb = fresh.get("kanban", {})
+            from dashboard.command_center.app import KanbanColumn
+            for bucket, col_id in [
+                ("todo", "#kanban-todo"),
+                ("in_progress", "#kanban-progress"),
+                ("review", "#kanban-review"),
+                ("done", "#kanban-done"),
+            ]:
+                col = self.query_one(col_id, KanbanColumn)
+                col.populate(bucket.replace("_", " ").title(), kb.get(bucket, []))
+        except Exception:
+            pass  # non-fatal — kanban refreshes on next poll anyway
+
+    @work(thread=True)
+    def _stream_agent_cmd(self, cmd: str) -> None:
+        """Legacy: run a raw liaison CLI command and stream output. Kept for backward compat."""
+        executable = str(LIAISON_BIN) if LIAISON_BIN.exists() else "liaison"
+        parts = shlex.split(cmd)
+        if parts and parts[0] == "liaison":
+            argv = [executable, *parts[1:]]
+        else:
+            argv = parts
+
+        try:
+            proc = subprocess.Popen(
+                argv,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=str(Path.cwd()),
+            )
+            for line in proc.stdout:  # type: ignore[union-attr]
+                stripped = line.rstrip("\n")
+                if stripped:
+                    self.call_from_thread(self._agent_log_line, stripped)
+            proc.wait()
+            rc = proc.returncode
+            summary = f"[green]✓ done (exit {rc})[/green]" if rc == 0 else f"[red]✗ exit {rc}[/red]"
+            self.call_from_thread(self._agent_log_line, summary)
+            self.call_from_thread(self._agent_set_status, "Ready")
+        except Exception as exc:
+            self.call_from_thread(self._agent_log_line, f"[red]Error: {exc}[/red]")
+            self.call_from_thread(self._agent_set_status, "Error")
+
+    def _agent_log_line(self, line: str) -> None:
+        self.query_one("#agent-log", RichLog).write(line)
+
+    def _agent_set_status(self, text: str) -> None:
+        self.query_one("#agent-status", Static).update(text)
 
     @on(ListView.Selected, "#rolodex-cats")
     def category_selected(self, event: ListView.Selected) -> None:
