@@ -75,10 +75,17 @@ def main() -> int:
     ap.add_argument("question", help="Research question to investigate")
     ap.add_argument("--asset-class", default="equity",
                     choices=["equity", "forex", "crypto"],
-                    help="Asset class (default: equity)")
+                    help="Asset class for equity harness (default: equity)")
     ap.add_argument("--universe",
                     default="AAPL,MSFT,NVDA,AMZN,GOOG,META,TSLA,JPM,V,WMT",
-                    help="Comma-separated tickers to search over")
+                    help="Comma-separated tickers (equity mode only)")
+    ap.add_argument("--backtest-type", default="equity",
+                    choices=["equity", "options_income"],
+                    help="Type of backtest: 'equity' for strategy combiner, "
+                         "'options_income' for SPY/QQQ put credit spread configs")
+    ap.add_argument("--underlying", default="SPY",
+                    choices=["SPY", "QQQ"],
+                    help="Underlying for options_income mode (default: SPY)")
     ap.add_argument("--max-attempts", type=int, default=6,
                     help="Max hypothesis attempts before giving up (default: 6)")
     ap.add_argument("--show-journal", action="store_true",
@@ -104,6 +111,8 @@ def main() -> int:
         asset_class=args.asset_class,
         universe=args.universe,
         max_attempts=args.max_attempts,
+        backtest_type=args.backtest_type,
+        options_underlying=args.underlying,
     )
 
     outcome = agent.run()
