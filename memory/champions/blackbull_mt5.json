@@ -1,0 +1,23 @@
+{
+  "account": "blackbull_mt5",
+  "set_at": "2026-07-24T01:41:48",
+  "research_question": "BlackBull MT5 gold+forex strategy sweep",
+  "backtest_type": "equity",
+  "config": {
+    "strategy": "mean_reversion+regime"
+  },
+  "strategy": "mean_reversion+regime",
+  "symbols": [
+    "XAUUSD",
+    "EURUSD",
+    "USDJPY",
+    "USDCHF"
+  ],
+  "oos_stats": {
+    "n_trades": 287,
+    "net_bps": 9.1,
+    "sharpe": 0.076,
+    "win_rate": 0.532
+  },
+  "notes": "XAUUSD regime Sharpe=0.053 + EUR/JPY/CHF mean_reversion Sharpe=0.076. Combined OOS Sharpe 0.076 (best single-strategy across full pool). Weights: XAUUSD:0.35, EURUSD:0.25, USDJPY:0.20, USDCHF:0.20."
+}

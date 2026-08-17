@@ -1,0 +1,49 @@
+{
+  "account": "core_allocation",
+  "set_at": "2026-07-24T02:20:57",
+  "research_question": "ETF+photonic+ai+robotics with 5m/10m crossover filter",
+  "backtest_type": "equity",
+  "config": {
+    "ma_months": 10,
+    "fast_ma_months": 5,
+    "filter": "crossover_5_10"
+  },
+  "strategy": "crossover_5_10",
+  "symbols": [
+    "SPY",
+    "EFA",
+    "EEM",
+    "TLT",
+    "IEF",
+    "GLD",
+    "DBC",
+    "VNQ",
+    "UUP",
+    "FXE",
+    "IBIT",
+    "MU",
+    "COHR",
+    "LITE",
+    "CRDO",
+    "IPGP",
+    "CIEN",
+    "VIAV",
+    "SMCI",
+    "ALAB",
+    "MRVL",
+    "LSCC",
+    "CEVA",
+    "PLTR",
+    "KTOS",
+    "AVAV",
+    "ISRG",
+    "TDY"
+  ],
+  "oos_stats": {
+    "n_months": 43,
+    "sharpe": 1.9397,
+    "cagr_pct": 17.94,
+    "max_dd_pct": -5.26
+  },
+  "notes": "Allocation harness sweep 2026-07-24. Winner: etf+photonic+ai+robotics (28 tickers), crossover_5_10. OOS Sharpe 1.94 vs single_ma_10=1.49, all_55=1.59, ETF-only=1.69."
+}

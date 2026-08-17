@@ -1,0 +1,52 @@
+{
+  "research_question": "Does any sigma strategy find durable edge on quantum computing stocks?",
+  "started_at": "2026-07-24T00:46:58",
+  "attempts": [
+    {
+      "attempt": 1,
+      "timestamp": "2026-07-24T00:46:58",
+      "hypothesis": "Quantum computing stocks exhibit regime-dependent behavior where momentum strategies capture upward price movements during bullish phases, while mean-reversion strategies exploit overreactions during bearish phases. The structural reason is that quantum companies often experience extreme volatility due to speculative investment patterns and limited operational history, creating distinct market regimes that can be mechanically identified and traded.",
+      "strategies": [
+        "momentum",
+        "mean_reversion",
+        "regime"
+      ],
+      "symbols": [
+        "IONQ",
+        "RGTI",
+        "QBTS",
+        "QUBT"
+      ],
+      "train_end": "2022-12-31",
+      "asset_class": "equity",
+      "train_stats": {
+        "regime": {
+          "n_trades": 2769,
+          "gross_bps": -119.594,
+          "net_bps": -119.663,
+          "sharpe": -0.0286,
+          "max_dd_pct": 3555.793,
+          "win_rate": 0.3763
+        }
+      },
+      "oos_stats": {
+        "regime": {
+          "n_trades": 3360,
+          "gross_bps": 47.238,
+          "net_bps": 47.173,
+          "sharpe": 0.0544,
+          "max_dd_pct": 300.4,
+          "win_rate": 0.4994
+        }
+      },
+      "gate_passed": true,
+      "gate_reasons": [],
+      "failure_mode": "",
+      "next_direction": "",
+      "reflection": "Gate passed \u2014 edge found."
+    }
+  ],
+  "outcome": "edge_found",
+  "final_finding": "Strategy 'regime' on ['IONQ', 'RGTI', 'QBTS', 'QUBT'] passed OOS gate. OOS: net_bps=47.17, sharpe=0.054, n_trades=3360. Hypothesis: Quantum computing stocks exhibit regime-dependent behavior where momentum strategies capture upward price movements during bullish phases, while mean-reversion strategies exploit overreactions during bearish phases. The structural reason is that quantum companies often experience extreme volatility due to speculative investment patterns and limited operational history, creating distinct market regimes that can be mechanically identified and traded.",
+  "completed_at": "2026-07-24T00:46:58"
+}

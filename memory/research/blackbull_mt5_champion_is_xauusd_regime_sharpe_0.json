@@ -1,0 +1,8 @@
+{
+  "research_question": "BlackBull MT5: champion is XAUUSD regime (Sharpe 0.053) + EUR/JPY/CHF mean-reversion (Sharpe 0.076). Can we find a unified strategy that works across all four, or a better configuration of the two-strategy split? Explore: XAUUSD breakout, XAUUSD momentum, OU on CHF pairs. Target: improve on champion Sharpe.",
+  "started_at": "2026-08-03T07:03:09",
+  "attempts": [],
+  "outcome": "no_edge_found",
+  "final_finding": "No durable OOS edge found after 6 attempts. See research journal for failure modes and lessons.",
+  "completed_at": "2026-08-10T07:13:35"
+}

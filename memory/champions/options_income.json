@@ -1,0 +1,24 @@
+{
+  "account": "options_income",
+  "set_at": "2026-07-24T01:41:48",
+  "research_question": "SPY weekly put credit spread \u2014 OOS 2023-2026",
+  "backtest_type": "options_income",
+  "config": {
+    "entry_freq": "weekly",
+    "exit_mode": "expiry",
+    "sleeve_frac": 0.02,
+    "vix_min": 13,
+    "stop_mult": 4.0
+  },
+  "strategy": "weekly_vix13_stop4",
+  "symbols": [
+    "SPY"
+  ],
+  "oos_stats": {
+    "n_trades": 176,
+    "net_bps": 163.3,
+    "sharpe": 0.118,
+    "win_rate": 0.864
+  },
+  "notes": "Verified 2026-07 session. n=176, net=163.3bps, Sharpe=0.118, win_rate=86.4%."
+}

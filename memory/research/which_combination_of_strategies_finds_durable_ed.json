@@ -1,0 +1,53 @@
+{
+  "research_question": "Which combination of strategies finds durable edge on major forex pairs for the OANDA account?",
+  "started_at": "2026-07-24T01:23:39",
+  "attempts": [
+    {
+      "attempt": 1,
+      "timestamp": "2026-07-24T01:23:39",
+      "hypothesis": "The edge arises from a regime-conditional strategy that switches between momentum and mean reversion based on volatility and trend persistence, allowing for adaptive positioning that captures both trending and mean-reverting behaviors in forex markets.",
+      "strategies": [
+        "regime",
+        "momentum",
+        "mean_reversion"
+      ],
+      "symbols": [
+        "EUR_USD",
+        "GBP_USD",
+        "USD_JPY",
+        "AUD_USD",
+        "USD_CAD"
+      ],
+      "train_end": "2022-12-31",
+      "asset_class": "forex",
+      "train_stats": {
+        "mean_reversion": {
+          "n_trades": 5594,
+          "gross_bps": 1.548,
+          "net_bps": 1.277,
+          "sharpe": 0.0168,
+          "max_dd_pct": 37.625,
+          "win_rate": 0.5052
+        }
+      },
+      "oos_stats": {
+        "mean_reversion": {
+          "n_trades": 1185,
+          "gross_bps": 2.489,
+          "net_bps": 2.209,
+          "sharpe": 0.0473,
+          "max_dd_pct": 8.909,
+          "win_rate": 0.5224
+        }
+      },
+      "gate_passed": true,
+      "gate_reasons": [],
+      "failure_mode": "",
+      "next_direction": "",
+      "reflection": "Gate passed \u2014 edge found."
+    }
+  ],
+  "outcome": "edge_found",
+  "final_finding": "Strategy 'mean_reversion' on ['EUR_USD', 'GBP_USD', 'USD_JPY', 'AUD_USD', 'USD_CAD'] passed OOS gate. OOS: net_bps=2.21, sharpe=0.047, n_trades=1185. Hypothesis: The edge arises from a regime-conditional strategy that switches between momentum and mean reversion based on volatility and trend persistence, allowing for adaptive positioning that captures both trending and mean-reverting behaviors in forex markets.",
+  "completed_at": "2026-07-24T01:23:39"
+}

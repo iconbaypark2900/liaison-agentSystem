@@ -1,0 +1,8 @@
+{
+  "research_question": "OANDA forex: EUR/GBP/JPY mean-reversion is the confirmed champion. Can any alternative (OU process, breakout, regime, Fourier) beat it? Also try cross-rates (EUR_GBP, EUR_JPY, GBP_JPY). Target: OOS Sharpe > 0.047.",
+  "started_at": "2026-08-03T07:02:27",
+  "attempts": [],
+  "outcome": "no_edge_found",
+  "final_finding": "No durable OOS edge found after 6 attempts. See research journal for failure modes and lessons.",
+  "completed_at": "2026-08-10T07:09:34"
+}

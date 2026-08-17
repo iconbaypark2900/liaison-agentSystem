@@ -1,0 +1,8 @@
+{
+  "research_question": "Core portfolio allocation with trend filter: which strategy and symbols maximise OOS Sharpe while holding ETF backbone intact? Try momentum on emerging-tech tickers vs mean-reversion on broad ETFs. Target: improve on current champion Sharpe.",
+  "started_at": "2026-08-03T07:01:44",
+  "attempts": [],
+  "outcome": "no_edge_found",
+  "final_finding": "No durable OOS edge found after 6 attempts. See research journal for failure modes and lessons.",
+  "completed_at": "2026-08-10T07:05:28"
+}

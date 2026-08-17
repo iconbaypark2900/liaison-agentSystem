@@ -1,0 +1,110 @@
+{
+  "research_question": "What options configuration maximizes risk-adjusted premium harvesting on SPY put credit spreads?",
+  "started_at": "2026-07-24T01:06:28",
+  "attempts": [
+    {
+      "attempt": 1,
+      "timestamp": "2026-07-24T01:06:28",
+      "hypothesis": "Using a moderate VIX filter (vix_min=13) combined with a wider spread width (width_pct=0.025) increases both trade frequency and credit quality, improving risk-adjusted premium harvesting in the low-VIX 2023-2024 regime. The wider spread provides better protection against small price movements, while the VIX filter avoids entries during extremely low volatility periods that may not offer sufficient premium.",
+      "strategies": [
+        "weekly_vix13_width25"
+      ],
+      "symbols": [
+        "SPY"
+      ],
+      "train_end": "2022-12-31",
+      "asset_class": "options_income",
+      "train_stats": {
+        "options": {
+          "n_trades": 737,
+          "net_bps": -26.015,
+          "sharpe": -0.018,
+          "max_dd_pct": 641.565,
+          "win_rate": 0.7273,
+          "avg_credit_usd": 58.83,
+          "exit_reasons": {
+            "stop": 199,
+            "profit_target": 535,
+            "time_stop": 3
+          }
+        }
+      },
+      "oos_stats": {
+        "options": {
+          "n_trades": 176,
+          "net_bps": -6.443,
+          "sharpe": -0.0061,
+          "max_dd_pct": 151.299,
+          "win_rate": 0.6875,
+          "avg_credit_usd": 136.5,
+          "exit_reasons": {
+            "profit_target": 121,
+            "stop": 52,
+            "data_end": 3
+          }
+        }
+      },
+      "gate_passed": false,
+      "gate_reasons": [
+        "net -6.44 bps/trade is not positive",
+        "per-trade Sharpe -0.006 is not positive"
+      ],
+      "failure_mode": "n_trades_too_low",
+      "next_direction": "Reduce vix_min to 10, increase width_pct to 0.03, and allow bi-weekly entries to increase trade frequency while maintaining premium quality through a higher minimum credit requirement of 0.22.",
+      "reflection": "This configuration tried a moderate VIX filter (vix_min=13) and fixed spread width (width_pct=0.025) with weekly entries, but failed to generate sufficient trades in the 2024 volatility crush regime. The gate failed because the strategy was too restrictive, producing only 176 trades with negative net bps. The failure reveals that in low-volatility environments, more flexible entry criteria are needed to capture opportunities without compromising premium quality. A tighter VIX filter and wider spread with bi-weekly entries should increase trade frequency while preserving structural edge."
+    },
+    {
+      "attempt": 2,
+      "timestamp": "2026-07-24T01:06:37",
+      "hypothesis": "Using a moderate VIX filter (vix_min=13) combined with a softer stop loss (stop_mult=4.0) increases trade frequency and improves risk-adjusted returns by allowing more entries during low-VIX periods while reducing premature exits that could reduce overall premium collection.",
+      "strategies": [
+        "weekly_vix13_stop4"
+      ],
+      "symbols": [
+        "SPY"
+      ],
+      "train_end": "2022-12-31",
+      "asset_class": "options_income",
+      "train_stats": {
+        "options": {
+          "n_trades": 737,
+          "net_bps": 57.688,
+          "sharpe": 0.0307,
+          "max_dd_pct": 964.1,
+          "win_rate": 0.8643,
+          "avg_credit_usd": 49.11,
+          "exit_reasons": {
+            "profit_target": 633,
+            "stop": 64,
+            "time_stop": 35,
+            "near_max_loss": 5
+          }
+        }
+      },
+      "oos_stats": {
+        "options": {
+          "n_trades": 176,
+          "net_bps": 163.259,
+          "sharpe": 0.1181,
+          "max_dd_pct": 181.689,
+          "win_rate": 0.8636,
+          "avg_credit_usd": 116.2,
+          "exit_reasons": {
+            "profit_target": 152,
+            "stop": 20,
+            "time_stop": 1,
+            "data_end": 3
+          }
+        }
+      },
+      "gate_passed": true,
+      "gate_reasons": [],
+      "failure_mode": "",
+      "next_direction": "",
+      "reflection": "Gate passed \u2014 options edge found."
+    }
+  ],
+  "outcome": "edge_found",
+  "final_finding": "Options config 'weekly_vix13_stop4' on SPY passed gate. Config: {'entry_freq': 'weekly', 'sleeve_frac': 0.02, 'vix_min': 13.0, 'stop_mult': 4.0}. OOS: net_bps=163.26, sharpe=0.118, n_trades=176.",
+  "completed_at": "2026-07-24T01:06:37"
+}

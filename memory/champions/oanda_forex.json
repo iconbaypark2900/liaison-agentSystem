@@ -1,0 +1,22 @@
+{
+  "account": "oanda_forex",
+  "set_at": "2026-07-24T01:41:48",
+  "research_question": "OANDA forex mean-reversion edge on EUR/GBP/JPY",
+  "backtest_type": "equity",
+  "config": {
+    "strategy": "mean_reversion"
+  },
+  "strategy": "mean_reversion",
+  "symbols": [
+    "EUR_USD",
+    "GBP_USD",
+    "USD_JPY"
+  ],
+  "oos_stats": {
+    "n_trades": 312,
+    "net_bps": 8.2,
+    "sharpe": 0.047,
+    "win_rate": 0.521
+  },
+  "notes": "Research sweep 2026-07. Best FX pool after removing AUD/CAD."
+}

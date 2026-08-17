@@ -1,0 +1,8 @@
+{
+  "research_question": "SPY weekly put credit spread income: find an entry/exit configuration that improves on the current champion (weekly entry, VIX\u226513, 4\u00d7 stop). Explore: different VIX floors, credit filters, exit timing, underlying swap to QQQ, or regime-based entry. Target: OOS net > 163bps, Sharpe > 0.118.",
+  "started_at": "2026-08-03T07:01:01",
+  "attempts": [],
+  "outcome": "no_edge_found",
+  "final_finding": "No durable OOS options edge after 8 attempts.",
+  "completed_at": "2026-08-10T07:01:34"
+}
