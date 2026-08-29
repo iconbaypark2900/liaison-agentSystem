@@ -8,6 +8,12 @@ on:
 jobs:
   python:
     runs-on: ubuntu-latest
+    env:
+      # The command-center loads the spark-flow bridge from the live control
+      # plane root. Without this it resolves to ~/spark/agent-system, which
+      # does not exist on a runner; bin/spark-flow ships in this repo, so
+      # point it at the checkout.
+      LIAISON_ROOT: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
